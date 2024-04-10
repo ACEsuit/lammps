@@ -132,11 +132,11 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
   auto positions = torch::from_blob(
     k_positions.data(),
     {n_nodes,3},
-    torch::TensorOptions().dtype(torch_float_dtype).device(device));
+    torch::TensorOptions().dtype(torch::kFloat64).device(device));
 
   // ----- cell -----
   // TODO: how to use kokkos here?
-  auto cell = torch::zeros({3,3}, torch::TensorOptions().dtype(torch_float_dtype).device(device));
+  auto cell = torch::zeros({3,3}, torch::TensorOptions().dtype(torch::kFloat64).device(device));
   cell[0][0] = h0;
   cell[0][1] = 0.0;
   cell[0][2] = 0.0;
@@ -201,8 +201,10 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
         const double delz = ztmp - x(j,2);
         const double rsq = delx*delx + dely*dely + delz*delz;
         if (rsq < r_max_squared) {
-          k_edge_index(0,k) = i;
-          k_edge_index(1,k) = j;
+          //k_edge_index(0,k) = i;
+          //k_edge_index(1,k) = j;
+          k_edge_index(0,k) = j;
+          k_edge_index(1,k) = i;
           k++;
         }
       }
@@ -224,12 +226,14 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
         const double delz = ztmp - x(j,2);
         const double rsq = delx*delx + dely*dely + delz*delz;
         if (rsq < r_max_squared) {
-          k_edge_index(0,k) = i;
           int j_local = AtomKokkos::map_kokkos<DeviceType>(tag(j),map_style,k_map_array,k_map_hash);
-          k_edge_index(1,k) = j_local;
-          double shiftx = x(j,0) - x(j_local,0);
-          double shifty = x(j,1) - x(j_local,1);
-          double shiftz = x(j,2) - x(j_local,2);
+          //k_edge_index(0,k) = i;
+          //k_edge_index(1,k) = j_local;
+          k_edge_index(0,k) = j_local;
+          k_edge_index(1,k) = i;
+          double shiftx = -(x(j,0) - x(j_local,0));
+          double shifty = -(x(j,1) - x(j_local,1));
+          double shiftz = -(x(j,2) - x(j_local,2));
           double shiftxs = std::round(hinv0*shiftx + hinv5*shifty + hinv4*shiftz);
           double shiftys = std::round(hinv1*shifty + hinv3*shiftz);
           double shiftzs = std::round(hinv2*shiftz);
@@ -251,11 +255,11 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
   auto unit_shifts = torch::from_blob(
     k_unit_shifts.data(),
     {n_edges,3},
-    torch::TensorOptions().dtype(torch_float_dtype).device(device));
+    torch::TensorOptions().dtype(torch::kFloat64).device(device));
   auto shifts = torch::from_blob(
     k_shifts.data(),
     {n_edges,3},
-    torch::TensorOptions().dtype(torch_float_dtype).device(device));
+    torch::TensorOptions().dtype(torch::kFloat64).device(device));
 
   // ----- node_attrs -----
   // node_attrs is one-hot encoding for atomic numbers
@@ -275,7 +279,7 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
   auto node_attrs = torch::from_blob(
     k_node_attrs.data(),
     {n_nodes, n_node_feats},
-    torch::TensorOptions().dtype(torch_float_dtype).device(device));
+    torch::TensorOptions().dtype(torch::kFloat64).device(device));
 
   // ----- mask for ghost -----
   Kokkos::View<bool*,DeviceType> k_mask("k_mask", n_nodes);
@@ -290,10 +294,10 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
 
   // TODO: why is batch of size n_nodes?
   auto batch = torch::zeros({n_nodes}, torch::TensorOptions().dtype(torch::kInt64).device(device));
-  auto energy = torch::empty({1}, torch::TensorOptions().dtype(torch_float_dtype).device(device));
-  auto forces = torch::empty({n_nodes,3}, torch::TensorOptions().dtype(torch_float_dtype).device(device));
+  auto energy = torch::empty({1}, torch::TensorOptions().dtype(torch::kFloat64).device(device));
+  auto forces = torch::empty({n_nodes,3}, torch::TensorOptions().dtype(torch::kFloat64).device(device));
   auto ptr = torch::empty({2}, torch::TensorOptions().dtype(torch::kInt64).device(device));
-  auto weight = torch::empty({1}, torch::TensorOptions().dtype(torch_float_dtype).device(device));
+  auto weight = torch::empty({1}, torch::TensorOptions().dtype(torch::kFloat64).device(device));
   ptr[0] = 0;
   ptr[1] = n_nodes;
   weight[0] = 1.0;
@@ -301,22 +305,22 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
   // pack the input, call the model, extract the output
   c10::Dict<std::string, torch::Tensor> input;
   input.insert("batch", batch);
-  input.insert("cell", cell);
+  input.insert("cell", cell.to(torch_float_dtype));
   input.insert("edge_index", edge_index);
-  input.insert("energy", energy);
-  input.insert("forces", forces);
-  input.insert("node_attrs", node_attrs);
-  input.insert("positions", positions);
+  input.insert("energy", energy.to(torch_float_dtype));
+  input.insert("forces", forces.to(torch_float_dtype));
+  input.insert("node_attrs", node_attrs.to(torch_float_dtype));
+  input.insert("positions", positions.to(torch_float_dtype));
   input.insert("ptr", ptr);
-  input.insert("shifts", shifts);
-  input.insert("unit_shifts", unit_shifts);
-  input.insert("weight", weight);
+  input.insert("shifts", shifts.to(torch_float_dtype));
+  input.insert("unit_shifts", unit_shifts.to(torch_float_dtype));
+  input.insert("weight", weight.to(torch_float_dtype));
   auto output = model.forward({input, mask, bool(vflag_global)}).toGenericDict();
 
   // mace energy
   //   -> sum of site energies of local atoms
   if (eflag_global) {
-    auto node_energy = output.at("node_energy").toTensor();
+    auto node_energy = output.at("node_energy").toTensor().to(torch::kFloat64);
     auto node_energy_ptr = static_cast<double*>(node_energy.data_ptr());
     auto k_node_energy = Kokkos::View<double*,Kokkos::LayoutRight,DeviceType,Kokkos::MemoryTraits<Kokkos::Unmanaged>>(node_energy_ptr,n_nodes);
     eng_vdwl = 0.0;
@@ -328,7 +332,7 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
 
   // mace forces
   //   -> derivatives of total mace energy
-  forces = output.at("forces").toTensor();
+  forces = output.at("forces").toTensor().to(torch::kFloat64);
   auto forces_ptr = static_cast<double*>(forces.data_ptr());
   auto k_forces = Kokkos::View<double*[3],Kokkos::LayoutRight,DeviceType,Kokkos::MemoryTraits<Kokkos::Unmanaged>>(forces_ptr,n_nodes);
   Kokkos::parallel_for("PairMACEKokkos: Extract k_forces.", n_nodes, KOKKOS_LAMBDA(const int ii) {
@@ -342,7 +346,7 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
   //   -> derivatives of sum of site energies of local atoms
   if (vflag_global) {
     // TODO: is this cpu transfer necessary?
-    auto vir = output.at("virials").toTensor().to("cpu");
+    auto vir = output.at("virials").toTensor().to(torch::kFloat64).to("cpu");
     // caution: lammps does not use voigt ordering
     virial[0] += vir[0][0][0].item<double>();
     virial[1] += vir[0][1][1].item<double>();
