@@ -345,12 +345,14 @@ void PairMACEKokkos<DeviceType>::compute(int eflag, int vflag)
     // TODO: is this cpu transfer necessary?
     auto vir = output.at("virials").toTensor().to("cpu");
     // caution: lammps does not use voigt ordering
-    virial[0] += vir[0][0][0].item<double>();
-    virial[1] += vir[0][1][1].item<double>();
-    virial[2] += vir[0][2][2].item<double>();
-    virial[3] += 0.5*(vir[0][1][0].item<double>() + vir[0][0][1].item<double>());
-    virial[4] += 0.5*(vir[0][2][0].item<double>() + vir[0][0][2].item<double>());
-    virial[5] += 0.5*(vir[0][2][1].item<double>() + vir[0][1][2].item<double>());
+    // also: it would be nice to get rid of the 'template item' stuff,
+    //       but some compilers seem to require it
+    virial[0] += vir[0][0][0].template item<double>();
+    virial[1] += vir[0][1][1].template item<double>();
+    virial[2] += vir[0][2][2].template item<double>();
+    virial[3] += 0.5*(vir[0][1][0].template item<double>() + vir[0][0][1].template item<double>());
+    virial[4] += 0.5*(vir[0][2][0].template item<double>() + vir[0][0][2].template item<double>());
+    virial[5] += 0.5*(vir[0][2][1].template item<double>() + vir[0][1][2].template item<double>());
   }
 
   // TODO: investigate this
