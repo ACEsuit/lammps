@@ -17,13 +17,21 @@
 from __future__ import print_function
 
 import os
-import sys
-from ctypes import *                    # lgtm [py/polluting-import]
-from os.path import dirname,abspath,join
+from ctypes import CDLL, POINTER, RTLD_GLOBAL, CFUNCTYPE, py_object, byref, cast, sizeof, \
+  create_string_buffer, c_int, c_int32, c_int64, c_double, c_void_p, c_char_p, c_char,    \
+  pythonapi
+from os.path import dirname, abspath, join
 from inspect import getsourcefile
 
-from .constants import *                # lgtm [py/polluting-import]
-from .data import *                     # lgtm [py/polluting-import]
+from lammps.constants import LAMMPS_AUTODETECT, LAMMPS_STRING, \
+  LAMMPS_INT, LAMMPS_INT_2D, LAMMPS_DOUBLE, LAMMPS_DOUBLE_2D, LAMMPS_INT64, LAMMPS_INT64_2D, \
+  LMP_STYLE_GLOBAL, LMP_STYLE_ATOM, LMP_STYLE_LOCAL, \
+  LMP_TYPE_SCALAR, LMP_TYPE_VECTOR, LMP_TYPE_ARRAY, \
+  LMP_SIZE_VECTOR, LMP_SIZE_ROWS, LMP_SIZE_COLS, \
+  LMP_VAR_EQUAL, LMP_VAR_ATOM, LMP_VAR_VECTOR, LMP_VAR_STRING, \
+  get_ctypes_int
+
+from lammps.data import NeighList
 
 # -------------------------------------------------------------------------
 
@@ -47,6 +55,77 @@ class ExceptionCheck:
   def __exit__(self, exc_type, exc_value, traceback):
     if self.lmp.has_exceptions and self.lmp.lib.lammps_has_error(self.lmp.lmp):
       raise self.lmp._lammps_exception
+
+# -------------------------------------------------------------------------
+
+class command_wrapper(object):
+  def __init__(self, lmp):
+    self.lmp = lmp
+    self.auto_flush = False
+
+  def lmp_print(self, s):
+    """ needed for Python2 compatibility, since print is a reserved keyword """
+    return self.__getattr__("print")(s)
+
+  def __dir__(self):
+    return sorted(set(['angle_coeff', 'angle_style', 'atom_modify', 'atom_style', 'atom_style',
+    'bond_coeff', 'bond_style', 'boundary', 'change_box', 'communicate', 'compute',
+    'create_atoms', 'create_box', 'delete_atoms', 'delete_bonds', 'dielectric',
+    'dihedral_coeff', 'dihedral_style', 'dimension', 'dump', 'fix', 'fix_modify',
+    'group', 'improper_coeff', 'improper_style', 'include', 'kspace_modify',
+    'kspace_style', 'lattice', 'mass', 'minimize', 'min_style', 'neighbor',
+    'neigh_modify', 'newton', 'nthreads', 'pair_coeff', 'pair_modify',
+    'pair_style', 'processors', 'read', 'read_data', 'read_restart', 'region',
+    'replicate', 'reset_timestep', 'restart', 'run', 'run_style', 'thermo',
+    'thermo_modify', 'thermo_style', 'timestep', 'undump', 'unfix', 'units',
+    'variable', 'velocity', 'write_restart'] + self.lmp.available_styles("command")))
+
+  def _wrap_args(self, x):
+      if callable(x):
+          import hashlib
+          import __main__
+          sha = hashlib.sha256()
+          sha.update(str(x).encode())
+          func_name = f"_lmp_cb_{sha.hexdigest()}"
+          def handler(*args, **kwargs):
+              args = list(args)
+              args[0] = lammps(ptr=args[0])
+              x(*args)
+          setattr(__main__, func_name, handler)
+          return func_name
+      return x
+
+  def __getattr__(self, name):
+    """
+    This method is where the Python 'magic' happens. If a method is not
+    defined by the class command_wrapper, it assumes it is a LAMMPS command. It takes
+    all the arguments, concatinates them to a single string, and executes it using
+    :py:meth:`lammps.command`.
+
+    LAMMPS commands that accept callback functions (such as fix python/invoke)
+    can be passed functions and lambdas directly. The first argument of such
+    callbacks will be an lammps object constructed from the passed LAMMPS
+    pointer.
+
+    :return: line or list of lines of output, None if no output
+    :rtype: list or string
+    """
+    def handler(*args, **kwargs):
+      cmd_args = [name] + [str(self._wrap_args(x)) for x in args]
+
+      # Python 3.6+ maintains ordering of kwarg keys
+      for k in kwargs.keys():
+          cmd_args.append(k)
+          if type(kwargs[k]) == bool:
+              cmd_args.append("true" if kwargs[k] else "false")
+          else:
+              cmd_args.append(str(self._wrap_args(kwargs[k])))
+
+      cmd = ' '.join(cmd_args)
+      self.lmp.command(cmd)
+      if self.auto_flush:
+          self.lmp.flush_buffers()
+    return handler
 
 # -------------------------------------------------------------------------
 
@@ -94,6 +173,8 @@ class lammps(object):
       winpath = os.environ.get("LAMMPSDLLPATH")
     self.lib = None
     self.lmp = None
+    self._cmd = None
+    self._ipython = None
 
     # if a pointer to a LAMMPS object is handed in
     # when being called from a Python interpreter
@@ -168,6 +249,9 @@ class lammps(object):
     self.lib.lammps_free.argtypes = [c_void_p]
 
     self.lib.lammps_error.argtypes = [c_void_p, c_int, c_char_p]
+
+    self.lib.lammps_expand.argtypes = [c_void_p, c_char_p]
+    self.lib.lammps_expand.restype = POINTER(c_char)
 
     self.lib.lammps_file.argtypes = [c_void_p, c_char_p]
     self.lib.lammps_file.restype = None
@@ -318,12 +402,21 @@ class lammps(object):
     self.lib.lammps_extract_atom.argtypes = [c_void_p, c_char_p]
     self.lib.lammps_extract_atom_datatype.argtypes = [c_void_p, c_char_p]
     self.lib.lammps_extract_atom_datatype.restype = c_int
+    self.lib.lammps_extract_atom_size.argtypes = [c_void_p, c_char_p, c_int]
+    self.lib.lammps_extract_atom_size.restype = c_int
 
     self.lib.lammps_extract_fix.argtypes = [c_void_p, c_char_p, c_int, c_int, c_int, c_int]
 
     self.lib.lammps_extract_variable.argtypes = [c_void_p, c_char_p, c_char_p]
     self.lib.lammps_extract_variable_datatype.argtypes = [c_void_p, c_char_p]
     self.lib.lammps_extract_variable_datatype.restype = c_int
+
+    self.lib.lammps_clearstep_compute.argtype = [c_void_p]
+    self.lib.lammps_addstep_compute.argtype = [c_void_p, c_void_p]
+    self.lib.lammps_addstep_compute_all.argtype = [c_void_p, c_void_p]
+
+    self.lib.lammps_eval.argtypes = [c_void_p, c_char_p]
+    self.lib.lammps_eval.restype = c_double
 
     self.lib.lammps_fix_external_get_force.argtypes = [c_void_p, c_char_p]
     self.lib.lammps_fix_external_get_force.restype = POINTER(POINTER(c_double))
@@ -426,16 +519,10 @@ class lammps(object):
 
     else:
       # magic to convert ptr to ctypes ptr
-      if sys.version_info >= (3, 0):
-        # Python 3 (uses PyCapsule API)
-        pythonapi.PyCapsule_GetPointer.restype = c_void_p
-        pythonapi.PyCapsule_GetPointer.argtypes = [py_object, c_char_p]
-        self.lmp = c_void_p(pythonapi.PyCapsule_GetPointer(ptr, None))
-      else:
-        # Python 2 (uses PyCObject API)
-        pythonapi.PyCObject_AsVoidPtr.restype = c_void_p
-        pythonapi.PyCObject_AsVoidPtr.argtypes = [py_object]
-        self.lmp = c_void_p(pythonapi.PyCObject_AsVoidPtr(ptr))
+      # Python 3 (uses PyCapsule API)
+      pythonapi.PyCapsule_GetPointer.restype = c_void_p
+      pythonapi.PyCapsule_GetPointer.argtypes = [py_object, c_char_p]
+      self.lmp = c_void_p(pythonapi.PyCapsule_GetPointer(ptr, None))
 
     # check if library initilialization failed
     if not self.lmp:
@@ -492,6 +579,61 @@ class lammps(object):
       from .numpy_wrapper import numpy_wrapper
       self._numpy = numpy_wrapper(self)
     return self._numpy
+
+  # -------------------------------------------------------------------------
+
+  @property
+  def cmd(self):
+    """ Return object that acts as LAMMPS command wrapper
+
+    It provides alternative to :py:meth:`lammps.command` to call LAMMPS
+    commands as if they were regular Python functions and enables auto-complete
+    in interactive Python sessions.
+
+    .. code-block:: python
+
+       from lammps import lammps
+
+       # melt example
+       L = lammps()
+       L.cmd.units("lj")
+       L.cmd.atom_style("atomic")
+       L.cmd.lattice("fcc", 0.8442)
+       L.cmd.region("box block", 0, 10, 0, 10, 0, 10)
+       L.cmd.create_box(1, "box")
+       L.cmd.create_atoms(1, "box")
+       L.cmd.mass(1, 1.0)
+       L.cmd.velocity("all create", 3.0, 87287, "loop geom")
+       L.cmd.pair_style("lj/cut", 2.5)
+       L.cmd.pair_coeff(1, 1, 1.0, 1.0, 2.5)
+       L.cmd.neighbor(0.3, "bin")
+       L.cmd.neigh_modify(every=20, delay=0, check=False)
+       L.cmd.fix(1, "all nve")
+       L.cmd.thermo(50)
+       L.cmd.run(250)
+
+    :return: instance of command_wrapper object
+    :rtype: command_wrapper
+    """
+    if not self._cmd:
+      self._cmd = command_wrapper(self)
+    return self._cmd
+
+  # -------------------------------------------------------------------------
+
+  @property
+  def ipython(self):
+    """ Return object to access ipython extensions
+
+    Adds commands for visualization in IPython and Jupyter Notebooks.
+
+    :return: instance of ipython wrapper object
+    :rtype: ipython.wrapper
+    """
+    if not self._ipython:
+      from .ipython import wrapper
+      self._ipython = wrapper(self)
+    return self._ipython
 
   # -------------------------------------------------------------------------
 
@@ -602,6 +744,37 @@ class lammps(object):
 
   # -------------------------------------------------------------------------
 
+  def expand(self,line):
+    """Expand a single LAMMPS string like an input line
+
+    This is a wrapper around the :cpp:func:`lammps_expand`
+    function of the C-library interface.
+
+    :param cmd: a single lammps line
+    :type cmd:  string
+    :return: expanded string
+    :rtype: string
+    """
+    if line: newline = line.encode()
+    else: return None
+
+    with ExceptionCheck(self):
+      strptr = self.lib.lammps_expand(self.lmp, newline)
+      rval = strptr[0]
+      if rval == b'\0':
+        rval = None
+      else:
+        i = 1
+        while strptr[i] != b'\0':
+          rval += strptr[i]
+          i = i + 1
+      self.lib.lammps_free(strptr)
+      if rval:
+        return rval.decode('utf-8')
+
+    return None
+  # -------------------------------------------------------------------------
+
   def file(self, path):
     """Read LAMMPS commands from a file.
 
@@ -707,9 +880,8 @@ class lammps(object):
     box_change = c_int()
 
     with ExceptionCheck(self):
-      self.lib.lammps_extract_box(self.lmp,boxlo,boxhi,
-                                  byref(xy),byref(yz),byref(xz),
-                                  periodicity,byref(box_change))
+      self.lib.lammps_extract_box(self.lmp, boxlo, boxhi, byref(xy), byref(yz), byref(xz),
+                                  periodicity, byref(box_change))
 
     boxlo = boxlo[:3]
     boxhi = boxhi[:3]
@@ -1045,7 +1217,7 @@ class lammps(object):
     """
 
     tag = self.c_tagint(id)
-    return self.lib.lammps_map_atom(self.lmp, pointer(tag))
+    return self.lib.lammps_map_atom(self.lmp, byref(tag))
 
   # -------------------------------------------------------------------------
   # extract per-atom info datatype
@@ -1071,30 +1243,58 @@ class lammps(object):
     return self.lib.lammps_extract_atom_datatype(self.lmp, newname)
 
   # -------------------------------------------------------------------------
+  # extract per-atom info datatype
+
+  def extract_atom_size(self, name, dtype):
+    """Retrieve per-atom property dimensions from LAMMPS
+
+    This is a wrapper around the :cpp:func:`lammps_extract_atom_size`
+    function of the C-library interface. Its documentation includes a
+    list of the supported keywords.
+    This function returns ``None`` if the keyword is not
+    recognized. Otherwise it will return an integer value with the size
+    of the per-atom vector or array.  If *name* corresponds to a per-atom
+    array, the *dtype* keyword must be either LMP_SIZE_ROWS or LMP_SIZE_COLS
+    from the :ref:`type <py_type_constants>` constants defined in the
+    :py:mod:`lammps` module.  The return value is the requested size.
+    If *name* corresponds to a per-atom vector the *dtype* keyword is ignored.
+
+    :param name: name of the property
+    :type name:  string
+    :param type: either LMP_SIZE_ROWS or LMP_SIZE_COLS for arrays, otherwise ignored
+    :type type:  int
+    :return: data type of per-atom property (see :ref:`py_datatype_constants`)
+    :rtype: int
+    """
+    if name: newname = name.encode()
+    else: return None
+    return self.lib.lammps_extract_atom_size(self.lmp, newname, dtype)
+
+  # -------------------------------------------------------------------------
   # extract per-atom info
 
   def extract_atom(self, name, dtype=LAMMPS_AUTODETECT):
     """Retrieve per-atom properties from LAMMPS
 
-    This is a wrapper around the :cpp:func:`lammps_extract_atom`
-    function of the C-library interface. Its documentation includes a
-    list of the supported keywords and their data types.
-    Since Python needs to know the data type to be able to interpret
-    the result, by default, this function will try to auto-detect the data type
-    by asking the library. You can also force a specific data type by setting ``dtype``
-    to one of the :ref:`data type <py_datatype_constants>` constants defined in the
-    :py:mod:`lammps` module.
-    This function returns ``None`` if either the keyword is not
-    recognized, or an invalid data type constant is used.
+    This is a wrapper around the :cpp:func:`lammps_extract_atom` function of the
+    C-library interface. Its documentation includes a list of the supported
+    keywords and their data types.  Since Python needs to know the data type to
+    be able to interpret the result, by default, this function will try to
+    auto-detect the data type by asking the library. You can also force a
+    specific data type by setting ``dtype`` to one of the :ref:`data type
+    <py_datatype_constants>` constants defined in the :py:mod:`lammps` module.
+    This function returns ``None`` if either the keyword is not recognized, or
+    an invalid data type constant is used.
 
     .. note::
 
-       While the returned arrays of per-atom data are dimensioned
-       for the range [0:nmax] - as is the underlying storage -
-       the data is usually only valid for the range of [0:nlocal],
-       unless the property of interest is also updated for ghost
-       atoms.  In some cases, this depends on a LAMMPS setting, see
-       for example :doc:`comm_modify vel yes <comm_modify>`.
+       While the returned vectors or arrays of per-atom data are dimensioned for
+       the range [0:nmax] - as is the underlying storage - the data is usually
+       only valid for the range of [0:nlocal], unless the property of interest
+       is also updated for ghost atoms.  In some cases, this depends on a LAMMPS
+       setting, see for example :doc:`comm_modify vel yes <comm_modify>`.
+       The actual size can be determined by calling
+       py:meth:`extract_atom_size() <lammps.lammps.extract_atom_size>`.
 
     :param name: name of the property
     :type name:  string
@@ -1105,6 +1305,7 @@ class lammps(object):
             ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.POINTER(ctypes.c_int64)),
             ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.POINTER(ctypes.c_double)),
             or NoneType
+
     """
     if dtype == LAMMPS_AUTODETECT:
       dtype = self.extract_atom_datatype(name)
@@ -1379,6 +1580,26 @@ class lammps(object):
 
   # -------------------------------------------------------------------------
 
+  def clearstep_compute(self, nextstep):
+    with ExceptionCheck(self):
+      return self.lib.lammps_clearstep_compute(self.lmp)
+
+  # -------------------------------------------------------------------------
+
+  def addstep_compute(self, nextstep):
+    with ExceptionCheck(self):
+      nextstep = self.c_bigint(nextstep)
+      return self.lib.lammps_addstep_compute(self.lmp, byref(nextstep))
+
+  # -------------------------------------------------------------------------
+
+  def addstep_compute_all(self, nextstep):
+    with ExceptionCheck(self):
+      nextstep = self.c_bigint(nextstep)
+      return self.lib.lammps_addstep_compute_all(self.lmp, byref(nextstep))
+
+  # -------------------------------------------------------------------------
+
   def flush_buffers(self):
     """Flush output buffers
 
@@ -1456,6 +1677,29 @@ class lammps(object):
     else: return -1
     with ExceptionCheck(self):
       return self.lib.lammps_set_internal_variable(self.lmp,newname,value)
+
+  # -------------------------------------------------------------------------
+
+  def eval(self, expr):
+    """ Evaluate a LAMMPS immediate variable expression
+
+    .. versionadded:: 4Feb2025
+
+    This function is a wrapper around the function :cpp:func:`lammps_eval`
+    of the C library interface.  It evaluates and expression like in
+    immediate variables and returns the value.
+
+    :param expr: immediate variable expression
+    :type name: string
+    :return: the result of the evaluation
+    :rtype: c_double
+    """
+
+    if expr: newexpr = expr.encode()
+    else: return None
+
+    with ExceptionCheck(self):
+      return self.lib.lammps_eval(self.lmp, newexpr)
 
   # -------------------------------------------------------------------------
 
@@ -1742,7 +1986,7 @@ class lammps(object):
     """
 
     flags = (c_int*3)()
-    self.lib.lammps_decode_image_flags(image,byref(flags))
+    self.lib.lammps_decode_image_flags(image, byref(flags))
 
     return [int(i) for i in flags]
 
@@ -2227,7 +2471,6 @@ class lammps(object):
     :param caller: reference to some object passed to the callback function
     :type: object, optional
     """
-    import numpy as np
 
     def callback_wrapper(caller, ntimestep, nlocal, tag_ptr, x_ptr, fext_ptr):
       tag = self.numpy.iarray(self.c_tagint, tag_ptr, nlocal, 1)
@@ -2438,7 +2681,8 @@ class lammps(object):
     c_iatom = c_int()
     c_numneigh = c_int()
     c_neighbors = POINTER(c_int)()
-    self.lib.lammps_neighlist_element_neighbors(self.lmp, idx, element, byref(c_iatom), byref(c_numneigh), byref(c_neighbors))
+    self.lib.lammps_neighlist_element_neighbors(self.lmp, idx, element, byref(c_iatom),
+                                                byref(c_numneigh), byref(c_neighbors))
     return c_iatom.value, c_numneigh.value, c_neighbors
 
   # -------------------------------------------------------------------------
@@ -2522,3 +2766,7 @@ class lammps(object):
     newcomputeid = computeid.encode()
     idx = self.lib.lammps_find_compute_neighlist(self.lmp, newcomputeid, reqid)
     return idx
+
+# Local Variables:
+# fill-column: 80
+# End:

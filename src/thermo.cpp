@@ -87,7 +87,8 @@ static constexpr char YAML[] = "step temp ke pe ebond eangle edihed eimp evdwl e
 #define FORMAT_FLOAT_YAML_DEFAULT "%.15g"
 #define FORMAT_INT_YAML_DEFAULT "%d"
 
-#define FORMAT_MULTI_HEADER "------------ Step {:14} ----- CPU = {:12.7g} (sec) -------------"
+static constexpr char FORMAT_MULTI_HEADER[] =
+    "------------ Step {:14} ----- CPU = {:12.7g} (sec) -------------";
 
 enum { SCALAR, VECTOR, ARRAY };
 
@@ -100,8 +101,8 @@ static char fmtbuf[512];
 /* ---------------------------------------------------------------------- */
 
 Thermo::Thermo(LAMMPS *_lmp, int narg, char **arg) :
-    Pointers(_lmp), style(nullptr), vtype(nullptr), field2index(nullptr), argindex1(nullptr),
-    argindex2(nullptr), temperature(nullptr), pressure(nullptr), pe(nullptr)
+    Pointers(_lmp), style(nullptr), vtype(nullptr), cache_mutex(nullptr), field2index(nullptr),
+    argindex1(nullptr), argindex2(nullptr), temperature(nullptr), pressure(nullptr), pe(nullptr)
 {
   style = utils::strdup(arg[0]);
 
@@ -135,7 +136,7 @@ Thermo::Thermo(LAMMPS *_lmp, int narg, char **arg) :
     lineflag = YAMLLINE;
 
   } else if (strcmp(style, "custom") == 0) {
-    if (narg == 1) error->all(FLERR, "Illegal thermo style custom command");
+    if (narg == 1) error->all(FLERR, Error::ARGZERO, "Illegal thermo style custom command");
 
     // expand args if any have wildcard character "*"
 
@@ -158,7 +159,7 @@ Thermo::Thermo(LAMMPS *_lmp, int narg, char **arg) :
     }
 
   } else
-    error->all(FLERR, "Illegal thermo style command");
+    error->all(FLERR, Error::ARGZERO, "Illegal thermo style {}", style);
 
   index_temp = index_press_scalar = index_press_vector = index_pe = -1;
 
@@ -176,6 +177,7 @@ Thermo::Thermo(LAMMPS *_lmp, int narg, char **arg) :
 Thermo::~Thermo()
 {
   delete[] style;
+  delete cache_mutex;
   deallocate();
 }
 
@@ -208,6 +210,7 @@ void Thermo::init()
   ValueTokenizer *format_line = nullptr;
   if (format_line_user.size()) format_line = new ValueTokenizer(format_line_user);
 
+  lock_cache();
   field_data.clear();
   field_data.resize(nfield);
   std::string format_this, format_line_user_def;
@@ -277,6 +280,7 @@ void Thermo::init()
         format[i] += fmt::format("{:<8} = {} ", keyword[i], format_this);
     }
   }
+  unlock_cache();
 
   // chop off trailing blank or add closing bracket if needed and then add newline
   if (lineflag == ONELINE)
@@ -293,7 +297,9 @@ void Thermo::init()
 
   for (int i = 0; i < ncompute; i++) {
     computes[i] = modify->get_compute_by_id(id_compute[i]);
-    if (!computes[i]) error->all(FLERR, "Could not find thermo compute with ID {}", id_compute[i]);
+    if (!computes[i])
+      error->all(FLERR, Error::NOLASTLINE, "Could not find thermo compute with ID {}",
+                 id_compute[i]);
   }
 
   // find current ptr for each Fix ID
@@ -301,17 +307,20 @@ void Thermo::init()
 
   for (int i = 0; i < nfix; i++) {
     fixes[i] = modify->get_fix_by_id(id_fix[i]);
-    if (!fixes[i]) error->all(FLERR, "Could not find thermo fix ID {}", id_fix[i]);
+    if (!fixes[i])
+      error->all(FLERR, Error::NOLASTLINE, "Could not find thermo fix ID {}", id_fix[i]);
 
     if (output->thermo_every % fixes[i]->global_freq)
-      error->all(FLERR, "Thermo and fix {} not computed at compatible times", id_fix[i]);
+      error->all(FLERR, Error::NOLASTLINE, "Thermo and fix {} not computed at compatible times",
+                 id_fix[i]);
   }
 
   // find current ptr for each Variable ID
 
   for (int i = 0; i < nvariable; i++) {
     variables[i] = input->variable->find(id_variable[i]);
-    if (variables[i] < 0) error->all(FLERR, "Could not find thermo variable {}", id_variable[i]);
+    if (variables[i] < 0)
+      error->all(FLERR, Error::NOLASTLINE, "Could not find thermo variable {}", id_variable[i]);
   }
 
   // set ptrs to keyword-specific Compute objects
@@ -320,6 +329,10 @@ void Thermo::init()
   if (index_press_scalar >= 0) pressure = computes[index_press_scalar];
   if (index_press_vector >= 0) pressure = computes[index_press_vector];
   if (index_pe >= 0) pe = computes[index_pe];
+
+  // create mutex to protect access to cached thermo data
+  delete cache_mutex;
+  cache_mutex = new std::mutex;
 }
 
 /* ----------------------------------------------------------------------
@@ -366,9 +379,17 @@ void Thermo::header()
 
 /* ---------------------------------------------------------------------- */
 
+// called at the end of a run from Finish class
+
 void Thermo::footer()
 {
-  if (lineflag == YAMLLINE) utils::logmesg(lmp, "...\n");
+  if (comm->me == 0) {
+    if (lineflag == YAMLLINE) utils::logmesg(lmp, "...\n");
+  }
+
+  // no more locking for cached thermo data access needed
+  delete cache_mutex;
+  cache_mutex = nullptr;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -422,6 +443,7 @@ void Thermo::compute(int flag)
   }
 
   // add each thermo value to line with its specific format
+  lock_cache();
   field_data.clear();
   field_data.resize(nfield);
 
@@ -441,6 +463,7 @@ void Thermo::compute(int flag)
       field_data[ifield] = bivalue;
     }
   }
+  unlock_cache();
 
   // print line to screen and logfile
 
@@ -468,7 +491,7 @@ bigint Thermo::lost_check()
   nlocal[0] = atom->nlocal;
   nlocal[1] = error->get_numwarn();
   MPI_Allreduce(nlocal, ntotal, 2, MPI_LMP_BIGINT, MPI_SUM, world);
-  if (ntotal[0] < 0) error->all(FLERR, "Too many total atoms");
+  if (ntotal[0] < 0) error->all(FLERR, Error::NOLASTLINE, "Too many total atoms");
 
   // print notification, if future warnings will be ignored
   bigint maxwarn = error->get_maxwarn();
@@ -476,7 +499,8 @@ bigint Thermo::lost_check()
     warnbefore = 1;
     if (comm->me == 0)
       error->message(FLERR,
-                     "WARNING: Too many warnings: {} vs {}. All future warnings will be suppressed",
+                     "WARNING: Too many warnings: {} vs {}. "
+                     "All future warnings will be suppressed",
                      ntotal[1], maxwarn);
   }
   error->set_allwarn(MIN(MAXSMALLINT, ntotal[1]));
@@ -491,7 +515,8 @@ bigint Thermo::lost_check()
   // error message
 
   if (lostflag == Thermo::ERROR)
-    error->all(FLERR, "Lost atoms: original {} current {}", atom->natoms, ntotal[0]);
+    error->all(FLERR, Error::NOLASTLINE, "Lost atoms: original {} current {}", atom->natoms,
+               ntotal[0]);
 
   // warning message
 
@@ -519,16 +544,18 @@ void Thermo::modify_params(int narg, char **arg)
   while (iarg < narg) {
     if (strcmp(arg[iarg], "temp") == 0) {
       if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "thermo_modify temp", error);
-      if (index_temp < 0) error->all(FLERR, "Thermo style does not use temp");
+      if (index_temp < 0) error->all(FLERR, iarg + 1, "Thermo style does not use temp");
       delete[] id_compute[index_temp];
       id_compute[index_temp] = utils::strdup(arg[iarg + 1]);
 
       temperature = modify->get_compute_by_id(arg[iarg + 1]);
       if (!temperature)
-        error->all(FLERR, "Could not find thermo_modify temperature compute {}", arg[iarg + 1]);
+        error->all(FLERR, iarg + 1, "Could not find thermo_modify temperature compute {}",
+                   arg[iarg + 1]);
 
       if (temperature->tempflag == 0)
-        error->all(FLERR, "Thermo_modify compute {} does not compute temperature", arg[iarg + 1]);
+        error->all(FLERR, iarg + 1, "Thermo_modify compute {} does not compute temperature",
+                   arg[iarg + 1]);
       if (temperature->igroup != 0 && comm->me == 0)
         error->warning(FLERR, "Temperature for thermo pressure is not for group all");
 
@@ -539,12 +566,16 @@ void Thermo::modify_params(int narg, char **arg)
       if (index_press_scalar >= 0) {
         pcompute = modify->get_compute_by_id(id_compute[index_press_scalar]);
         if (!pcompute)
-          error->all(FLERR, "Pressure compute {} for thermo output does not exist",
+          error->all(FLERR, Error::NOPOINTER,
+                     "Pressure compute {} for thermo output does "
+                     "not exist",
                      id_compute[index_press_scalar]);
       } else if (index_press_vector >= 0) {
         pcompute = modify->get_compute_by_id(id_compute[index_press_vector]);
         if (!pcompute)
-          error->all(FLERR, "Pressure compute {} for thermo output does not exist",
+          error->all(FLERR, Error::NOPOINTER,
+                     "Pressure compute {} for thermo output does "
+                     "not exist",
                      id_compute[index_press_vector]);
       } else
         pcompute = modify->get_compute_by_id("thermo_press");
@@ -576,10 +607,11 @@ void Thermo::modify_params(int narg, char **arg)
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "triclinic/general") == 0) {
-      if (iarg + 2 > narg) error->all(FLERR, "Illegal thermo_modify command");
+      if (iarg + 2 > narg) utils::missing_cmd_args(FLERR, "thermo_modify tricinic/general", error);
       triclinic_general = utils::logical(FLERR, arg[iarg + 1], false, lmp);
       if (triclinic_general && !domain->triclinic_general)
-        error->all(FLERR,"Thermo_modify triclinic/general cannot be used "
+        error->all(FLERR, iarg,
+                   "Thermo_modify triclinic/general cannot be used "
                    "if simulation box is not general triclinic");
       iarg += 2;
 
@@ -592,7 +624,7 @@ void Thermo::modify_params(int narg, char **arg)
       else if (strcmp(arg[iarg + 1], "error") == 0)
         lostflag = Thermo::ERROR;
       else
-        error->all(FLERR, "Unknown thermo_modify lost argument: {}", arg[iarg + 1]);
+        error->all(FLERR, iarg + 1, "Unknown thermo_modify lost argument: {}", arg[iarg + 1]);
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "lost/bond") == 0) {
@@ -604,7 +636,7 @@ void Thermo::modify_params(int narg, char **arg)
       else if (strcmp(arg[iarg + 1], "error") == 0)
         lostbond = Thermo::ERROR;
       else
-        error->all(FLERR, "Unknown thermo_modify lost/bond argument: {}", arg[iarg + 1]);
+        error->all(FLERR, iarg + 1, "Unknown thermo_modify lost/bond argument: {}", arg[iarg + 1]);
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "warn") == 0) {
@@ -644,7 +676,7 @@ void Thermo::modify_params(int narg, char **arg)
       else if (strcmp(arg[iarg + 1], "yaml") == 0)
         lineflag = YAMLLINE;
       else
-        error->all(FLERR, "Unknown thermo_modify line argument: {}", arg[iarg + 1]);
+        error->all(FLERR, iarg + 1, "Unknown thermo_modify line argument: {}", arg[iarg + 1]);
       iarg += 2;
 
     } else if (strcmp(arg[iarg], "colname") == 0) {
@@ -667,7 +699,7 @@ void Thermo::modify_params(int narg, char **arg)
           }
         }
         if ((icol < 0) || (icol >= nfield_initial))
-          error->all(FLERR, "Invalid thermo_modify colname argument: {}", arg[iarg + 1]);
+          error->all(FLERR, iarg + 1, "Invalid thermo_modify colname argument: {}", arg[iarg + 1]);
         keyword_user[icol] = arg[iarg + 2];
         iarg += 3;
       }
@@ -694,7 +726,8 @@ void Thermo::modify_params(int narg, char **arg)
         auto found = format_int_user.find('%');
         found = format_int_user.find('d', found);
         if (found == std::string::npos)
-          error->all(FLERR, "Thermo_modify int format does not contain a d conversion character");
+          error->all(FLERR, iarg + 2,
+                     "Thermo_modify int format does not contain a d conversion character");
         format_bigint_user =
             format_int_user.replace(found, 1, std::string(BIGINT_FORMAT).substr(1));
       } else if (strcmp(arg[iarg + 1], "float") == 0) {
@@ -710,7 +743,7 @@ void Thermo::modify_params(int narg, char **arg)
           else
             icol = i;
           if (icol < 0 || (icol >= nfield_initial))
-            error->all(FLERR, "Invalid thermo_modify format argument: {}", arg[iarg + 1]);
+            error->all(FLERR, iarg + 1, "Invalid thermo_modify format argument: {}", arg[iarg + 1]);
           format_column_user[icol] = arg[iarg + 2];
         }
       } else {
@@ -727,13 +760,13 @@ void Thermo::modify_params(int narg, char **arg)
           }
         }
         if ((icol < 0) || (icol >= nfield_initial))
-          error->all(FLERR, "Invalid thermo_modify format argument: {}", arg[iarg + 1]);
+          error->all(FLERR, iarg + 1, "Invalid thermo_modify format argument: {}", arg[iarg + 1]);
         format_column_user[icol] = arg[iarg + 2];
       }
       iarg += 3;
 
     } else
-      error->all(FLERR, "Unknown thermo_modify keyword: {}", arg[iarg]);
+      error->all(FLERR, iarg, "Unknown thermo_modify keyword: {}", arg[iarg]);
   }
 }
 
@@ -1564,6 +1597,26 @@ int Thermo::evaluate_keyword(const std::string &word, double *answer)
 
   *answer = dvalue;
   return 0;
+}
+
+/* ---------------------------------------------------------------------- */
+
+// lock cache for current thermo data
+
+void Thermo::lock_cache()
+{
+  // no locking outside of a run
+  if (!cache_mutex) return;
+  cache_mutex->lock();
+}
+
+// unlock cache for current thermo data
+
+void Thermo::unlock_cache()
+{
+  // no locking outside of a run
+  if (!cache_mutex) return;
+  cache_mutex->unlock();
 }
 
 /* ----------------------------------------------------------------------

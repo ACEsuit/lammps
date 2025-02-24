@@ -3,6 +3,9 @@
 # CMake build system
 # This file is part of LAMMPS
 cmake_minimum_required(VERSION 3.16)
+if(CMAKE_VERSION VERSION_LESS 3.20)
+  message(WARNING "LAMMPS is planning to require at least CMake version 3.20 by Summer 2025. Please upgrade!")
+endif()
 ########################################
 # set policy to silence warnings about ignoring <PackageName>_ROOT but use it
 if(POLICY CMP0074)
@@ -118,7 +121,7 @@ endif()
 
 # silence excessive warnings for new Intel Compilers
 if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-  set(CMAKE_TUNE_DEFAULT "-Wno-tautological-constant-compare -Wno-unused-command-line-argument")
+  set(CMAKE_TUNE_DEFAULT "-fp-model precise -Wno-tautological-constant-compare -Wno-unused-command-line-argument")
 endif()
 
 # silence excessive warnings for PGI/NVHPC compilers
@@ -141,18 +144,30 @@ endif()
 
 # silence nvcc warnings
 if((PKG_KOKKOS) AND (Kokkos_ENABLE_CUDA) AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-  set(CMAKE_TUNE_DEFAULT "${CMAKE_TUNE_DEFAULT} -Xcudafe --diag_suppress=unrecognized_pragma")
+  set(CMAKE_TUNE_DEFAULT "${CMAKE_TUNE_DEFAULT}" "-Xcudafe --diag_suppress=unrecognized_pragma,--diag_suppress=128")
 endif()
 
-# we require C++11 without extensions. Kokkos requires at least C++17 (currently)
+# we *require* C++11 without extensions but prefer C++17.
+# Kokkos requires at least C++17 (currently)
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 11)
+  if(cxx_std_17 IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 17)
+  else()
+    set(CMAKE_CXX_STANDARD 11)
+  endif()
 endif()
 if(CMAKE_CXX_STANDARD LESS 11)
   message(FATAL_ERROR "C++ standard must be set to at least 11")
 endif()
+if(CMAKE_CXX_STANDARD LESS 17)
+  message(WARNING "Selecting C++17 standard is preferred over C++${CMAKE_CXX_STANDARD}")
+endif()
 if(PKG_KOKKOS AND (CMAKE_CXX_STANDARD LESS 17))
   set(CMAKE_CXX_STANDARD 17)
+endif()
+# turn off C++17 check in lmptype.h
+if(LAMMPS_CXX11)
+  add_compile_definitions(LAMMPS_CXX11)
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF CACHE BOOL "Use compiler extensions")
@@ -165,6 +180,7 @@ if(MSVC)
     add_compile_options(/wd4267)
     add_compile_options(/wd4250)
     add_compile_options(/EHsc)
+    add_compile_options(/utf-8)
   endif()
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
@@ -193,7 +209,7 @@ endif()
 ########################################################################
 # User input options                                                   #
 ########################################################################
-# backward compatibility with CMake before 3.12 and older LAMMPS documentation
+# backward compatibility with older LAMMPS documentation
 if (PYTHON_EXECUTABLE)
   set(Python_EXECUTABLE "${PYTHON_EXECUTABLE}")
 endif()
@@ -207,6 +223,12 @@ if(DEFINED ENV{VIRTUAL_ENV} AND NOT Python_EXECUTABLE)
   endif()
   message(STATUS "Running in virtual environment: $ENV{VIRTUAL_ENV}\n"
     "   Setting Python interpreter to: ${Python_EXECUTABLE}")
+endif()
+
+find_package(Python COMPONENTS Interpreter QUIET)
+# NOTE: RHEL 8.0 and Ubuntu 18.04LTS ship with Python 3.6, Python 3.8 was EOL in 2024
+if(Python_VERSION VERSION_LESS 3.6)
+  message(FATAL_ERROR "LAMMPS requires Python 3.6 or later")
 endif()
 
 set(LAMMPS_MACHINE "" CACHE STRING "Suffix to append to lmp binary (WON'T enable any features automatically")
@@ -347,6 +369,17 @@ foreach(PKG ${STANDARD_PACKAGES} ${SUFFIX_PACKAGES})
   option(PKG_${PKG} "Build ${PKG} Package" OFF)
 endforeach()
 
+set(DEPRECATED_PACKAGES AWPMD ATC POEMS)
+foreach(PKG ${DEPRECATED_PACKAGES})
+  if(PKG_${PKG})
+    message(WARNING
+          "The ${PKG} package will be removed from LAMMPS in Summer 2025 due to lack of "
+          "maintenance and use of code constructs that conflict with modern C++ compilers "
+          "and standards.  Please contact developers@lammps.org if you have any concerns "
+          "about this step.")
+  endif()
+endforeach()
+
 ######################################################
 # packages with special compiler needs or external libs
 ######################################################
@@ -475,13 +508,13 @@ if(BUILD_OMP)
   if(CMAKE_VERSION VERSION_LESS 3.28)
     get_filename_component(_exe "${CMAKE_CXX_COMPILER}" NAME)
     if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang") AND (_exe STREQUAL "crayCC"))
-      set(CMAKE_SHARED_LINKER_FLAGS_${BTYPE} "${CMAKE_SHARED_LINKER_FLAGS_${BTYPE} -fopenmp")
-      set(CMAKE_STATIC_LINKER_FLAGS_${BTYPE} "${CMAKE_STATIC_LINKER_FLAGS_${BTYPE} -fopenmp")
+      set(CMAKE_SHARED_LINKER_FLAGS_${BTYPE} "${CMAKE_SHARED_LINKER_FLAGS_${BTYPE}} -fopenmp")
+      set(CMAKE_STATIC_LINKER_FLAGS_${BTYPE} "${CMAKE_STATIC_LINKER_FLAGS_${BTYPE}} -fopenmp")
     endif()
   else()
     if(CMAKE_CXX_COMPILER_ID STREQUAL "CrayClang")
-      set(CMAKE_SHARED_LINKER_FLAGS_${BTYPE} "${CMAKE_SHARED_LINKER_FLAGS_${BTYPE} -fopenmp")
-      set(CMAKE_STATIC_LINKER_FLAGS_${BTYPE} "${CMAKE_STATIC_LINKER_FLAGS_${BTYPE} -fopenmp")
+      set(CMAKE_SHARED_LINKER_FLAGS_${BTYPE} "${CMAKE_SHARED_LINKER_FLAGS_${BTYPE}} -fopenmp")
+      set(CMAKE_STATIC_LINKER_FLAGS_${BTYPE} "${CMAKE_STATIC_LINKER_FLAGS_${BTYPE}} -fopenmp")
     endif()
   endif()
 endif()
@@ -498,7 +531,7 @@ if((CMAKE_CXX_COMPILER_ID STREQUAL "Intel") AND (CMAKE_CXX_STANDARD GREATER_EQUA
           PROPERTIES COMPILE_OPTIONS "-std=c++14")
 endif()
 
-if(PKG_ATC OR PKG_AWPMD OR PKG_ML-QUIP OR PKG_ML-POD OR PKG_ELECTRODE OR BUILD_TOOLS)
+if(PKG_ATC OR PKG_AWPMD OR PKG_ML-QUIP OR PKG_ML-POD OR PKG_ELECTRODE OR PKG_RHEO OR BUILD_TOOLS)
   enable_language(C)
   if (NOT USE_INTERNAL_LINALG)
     find_package(LAPACK)
@@ -514,14 +547,6 @@ if(PKG_ATC OR PKG_AWPMD OR PKG_ML-QUIP OR PKG_ML-POD OR PKG_ELECTRODE OR BUILD_T
   else()
     list(APPEND LAPACK_LIBRARIES ${BLAS_LIBRARIES})
   endif()
-endif()
-
-find_package(CURL QUIET COMPONENTS HTTP HTTPS)
-option(WITH_CURL "Enable libcurl support" ${CURL_FOUND})
-if(WITH_CURL)
-  find_package(CURL REQUIRED COMPONENTS HTTP HTTPS)
-  target_compile_definitions(lammps PRIVATE -DLAMMPS_CURL)
-  target_link_libraries(lammps PRIVATE CURL::libcurl)
 endif()
 
 # tweak jpeg library names to avoid linker errors with MinGW cross-compilation
@@ -581,11 +606,21 @@ else()
 endif()
 
 foreach(PKG_WITH_INCL KSPACE PYTHON ML-IAP VORONOI COLVARS ML-HDNNP MDI MOLFILE NETCDF
-        PLUMED QMMM ML-QUIP SCAFACOS MACHDYN VTK KIM COMPRESS ML-PACE ML-MACE LEPTON RHEO)
+        PLUMED QMMM ML-QUIP SCAFACOS MACHDYN VTK KIM COMPRESS ML-PACE ML-MACE LEPTON EXTRA-COMMAND)
   if(PKG_${PKG_WITH_INCL})
     include(Packages/${PKG_WITH_INCL})
   endif()
 endforeach()
+
+# settings for misc packages and styles
+if(PKG_MISC)
+  option(LAMMPS_ASYNC_IMD "Asynchronous IMD processing" OFF)
+  mark_as_advanced(LAMMPS_ASYNC_IMD)
+  if(LAMMPS_ASYNC_IMD)
+    target_compile_definitions(lammps PRIVATE -DLAMMPS_ASYNC_IMD)
+    message(STATUS "Using IMD in asynchronous mode")
+  endif()
+endif()
 
 # optionally enable building script wrappers using swig
 option(WITH_SWIG "Build scripting language wrappers with SWIG" OFF)
@@ -596,13 +631,8 @@ endif()
 
 set(CMAKE_TUNE_FLAGS "${CMAKE_TUNE_DEFAULT}" CACHE STRING "Compiler and machine specific optimization flags (compilation only)")
 separate_arguments(CMAKE_TUNE_FLAGS)
-foreach(_FLAG ${CMAKE_TUNE_FLAGS})
-  target_compile_options(lammps PRIVATE ${_FLAG})
-  # skip these flags when linking the main executable
-  if(NOT (("${_FLAG}" STREQUAL "-Xcudafe") OR (("${_FLAG}" STREQUAL "--diag_suppress=unrecognized_pragma"))))
-    target_compile_options(lmp PRIVATE ${_FLAG})
-  endif()
-endforeach()
+target_compile_options(lammps PRIVATE ${CMAKE_TUNE_FLAGS})
+target_compile_options(lmp PRIVATE ${CMAKE_TUNE_FLAGS})
 ########################################################################
 # Basic system tests (standard libraries, headers, functions, types)   #
 ########################################################################
@@ -831,9 +861,15 @@ foreach(_DEF ${LAMMPS_DEFINES})
   set(LAMMPS_API_DEFINES "${LAMMPS_API_DEFINES} -D${_DEF}")
 endforeach()
 if(BUILD_SHARED_LIBS)
-  install(TARGETS lammps EXPORT LAMMPS_Targets LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(TARGETS lammps EXPORT LAMMPS_Targets
+          LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
   if(NOT BUILD_MPI)
-    install(TARGETS mpi_stubs EXPORT LAMMPS_Targets LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    install(TARGETS mpi_stubs EXPORT LAMMPS_Targets
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
   endif()
   configure_file(pkgconfig/liblammps.pc.in ${CMAKE_CURRENT_BINARY_DIR}/liblammps${LAMMPS_MACHINE}.pc @ONLY)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/liblammps${LAMMPS_MACHINE}.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
@@ -901,7 +937,7 @@ endif()
 include(Testing)
 include(CodeCoverage)
 include(CodingStandard)
-find_package(ClangFormat 11.0)
+find_package(ClangFormat 11.0 QUIET)
 
 if(ClangFormat_FOUND)
   add_custom_target(format-src
@@ -974,6 +1010,9 @@ message(STATUS "<<< Compilers and Flags: >>>
       C++ Standard:  ${CMAKE_CXX_STANDARD}
       C++ Flags:    ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${BTYPE}}
       Defines:       ${DEFINES}")
+if(CMAKE_CXX_COMPILER_LAUNCHER)
+  message(STATUS "      Launcher:      ${CMAKE_CXX_COMPILER_LAUNCHER}")
+endif()
 get_target_property(OPTIONS lammps COMPILE_OPTIONS)
 if(OPTIONS)
   message("      Options:       ${OPTIONS}")
@@ -992,6 +1031,9 @@ if(_index GREATER -1)
       Type:          ${CMAKE_C_COMPILER_ID}
       Version:       ${CMAKE_C_COMPILER_VERSION}
       C Flags:      ${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${BTYPE}}")
+  if(CMAKE_C_COMPILER_LAUNCHER)
+    message(STATUS "      Launcher:      ${CMAKE_C_COMPILER_LAUNCHER}")
+  endif()
 endif()
 message(STATUS "<<< Linker flags: >>>")
 message(STATUS "Executable name:  ${LAMMPS_BINARY}")
@@ -1079,11 +1121,14 @@ if(BUILD_TOOLS)
   message(STATUS "<<< Building Tools >>>")
 endif()
 if(BUILD_LAMMPS_GUI)
-  message(STATUS "<<< Building LAMMPS GUI >>>")
+  message(STATUS "<<< Building LAMMPS-GUI >>>")
   if(LAMMPS_GUI_USE_PLUGIN)
     message(STATUS "Loading LAMMPS library as plugin at run time")
   else()
     message(STATUS "Linking LAMMPS library at compile time")
+  endif()
+  if(BUILD_WHAM)
+    message(STATUS "<<< Building WHAM >>>")
   endif()
 endif()
 if(ENABLE_TESTING)

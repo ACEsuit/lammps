@@ -148,6 +148,13 @@ void PairHbondDreidingMorse::compute(int eflag, int vflag)
           if (c < -1.0) c = -1.0;
           ac = acos(c);
 
+          if (angle_offset_flag){
+            ac = ac + pm.angle_offset;
+            c = cos(ac);
+            if (c > 1.0) c = 1.0;
+            if (c < -1.0) c = -1.0;
+          }
+
           if (ac > pm.cut_angle && ac < (2.0*MY_PI - pm.cut_angle)) {
             s = sqrt(1.0 - c*c);
             if (s < SMALL) s = SMALL;
@@ -158,6 +165,7 @@ void PairHbondDreidingMorse::compute(int eflag, int vflag)
             dr = r - pm.r0;
             dexp = exp(-pm.alpha * dr);
             eng_morse = pm.d0 * (dexp*dexp - 2.0*dexp);
+
             force_kernel = pm.morse1*(dexp*dexp - dexp)/r * powint(c,pm.ap);
             force_angle = pm.ap * eng_morse * powint(c,pm.ap-1)*s;
             force_switch = 0.0;
@@ -196,12 +204,12 @@ void PairHbondDreidingMorse::compute(int eflag, int vflag)
             vz1 = a11*delr1[2] + a12*delr2[2];
             vz2 = a22*delr2[2] + a12*delr1[2];
 
-            fi[0] = vx1 + (b+d)*delx;
-            fi[1] = vy1 + (b+d)*dely;
-            fi[2] = vz1 + (b+d)*delz;
-            fj[0] = vx2 - (b+d)*delx;
-            fj[1] = vy2 - (b+d)*dely;
-            fj[2] = vz2 - (b+d)*delz;
+            fi[0] = vx1 + b*delx + d*delx;
+            fi[1] = vy1 + b*dely + d*dely;
+            fi[2] = vz1 + b*delz + d*delz;
+            fj[0] = vx2 - b*delx - d*delx;
+            fj[1] = vy2 - b*dely - d*dely;
+            fj[2] = vz2 - b*delz - d*delz;
 
             f[i][0] += fi[0];
             f[i][1] += fi[1];
@@ -238,7 +246,9 @@ void PairHbondDreidingMorse::compute(int eflag, int vflag)
 
 void PairHbondDreidingMorse::coeff(int narg, char **arg)
 {
-  if (narg < 7 || narg > 11)
+  int maxarg = 12;
+  if (angle_offset_flag == 1) maxarg = 12;
+  if (narg < 7 || narg > maxarg)
     error->all(FLERR,"Incorrect args for pair coefficients");
   if (!allocated) allocate();
 
@@ -323,14 +333,14 @@ void PairHbondDreidingMorse::init_style()
   //   and computing forces on A,H which may be on different procs
 
   if (atom->molecular == Atom::ATOMIC)
-    error->all(FLERR,"Pair style hbond/dreiding requires molecular system");
+    error->all(FLERR,"Pair style hbond/dreiding/morse requires molecular system");
   if (atom->tag_enable == 0)
-    error->all(FLERR,"Pair style hbond/dreiding requires atom IDs");
+    error->all(FLERR,"Pair style hbond/dreiding/morse requires atom IDs");
   if (atom->map_style == Atom::MAP_NONE)
-    error->all(FLERR,"Pair style hbond/dreiding requires an atom map, "
+    error->all(FLERR,"Pair style hbond/dreiding/morse requires an atom map, "
                "see atom_modify");
   if (force->newton_pair == 0)
-    error->all(FLERR,"Pair style hbond/dreiding requires newton pair on");
+    error->all(FLERR,"Pair style hbond/dreiding/morse requires newton pair on");
 
   // set donor[M]/acceptor[M] if any atom of type M is a donor/acceptor
 
@@ -346,7 +356,7 @@ void PairHbondDreidingMorse::init_style()
           acceptor[j] = 1;
         }
 
-  if (!anyflag) error->all(FLERR,"No pair hbond/dreiding coefficients set");
+  if (!anyflag) error->all(FLERR,"No pair hbond/dreiding/morse coefficients set");
 
   // set additional param values
   // offset is for Morse only, angle term is not included
@@ -442,6 +452,13 @@ double PairHbondDreidingMorse::single(int i, int j, int itype, int jtype,
     if (c > 1.0) c = 1.0;
     if (c < -1.0) c = -1.0;
     ac = acos(c);
+
+    if (angle_offset_flag){
+      ac = ac + pm.angle_offset;
+      c = cos(ac);
+      if (c > 1.0) c = 1.0;
+      if (c < -1.0) c = -1.0;
+    }
 
     if (ac < pm.cut_angle || ac > (2.0*MY_PI - pm.cut_angle)) return 0.0;
     s = sqrt(1.0 - c*c);
