@@ -297,11 +297,8 @@ void PairMACE::coeff(int narg, char **arg)
     device = c10::Device(torch::kCPU);
   } else {
     std::cout << "CUDA found, setting device type to torch::kCUDA." << std::endl;
-    MPI_Comm local;
-    MPI_Comm_split_type(world, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &local);
-    int localrank;
-    MPI_Comm_rank(local, &localrank);
-    device = c10::Device(torch::kCUDA,localrank);
+    int localrank = 0;  // Assume GPU pinning occurs outside of LAMMPS
+    device = c10::Device(torch::kCUDA, localrank);
   }
 
   std::cout << "Loading MACE model from \"" << arg[2] << "\" ...";
