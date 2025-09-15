@@ -21,7 +21,6 @@ CommandStyle(delete_atoms,DeleteAtoms);
 #define LMP_DELETE_ATOMS_H
 
 #include "command.h"
-#include <map>
 
 namespace LAMMPS_NS {
 
@@ -30,10 +29,11 @@ class DeleteAtoms : public Command {
   DeleteAtoms(class LAMMPS *);
   void command(int, char **) override;
 
- private:
+ protected:
   int *dlist;
-  int allflag, compress_flag, bond_flag, mol_flag;
-  std::map<tagint, int> *hash;
+  int allflag, compress_flag, condense_flag, bond_flag, mol_flag;
+  int ringrank;
+  tagint *tagproc, *newtags;
 
   void delete_group(int, char **);
   void delete_region(int, char **);
@@ -52,6 +52,8 @@ class DeleteAtoms : public Command {
 
   static void bondring(int, char *, void *);
   static void molring(int, char *, void *);
+  static void addtags(int, char *, void *);
+  static void settags(int, char *, void *);
 };
 
 }    // namespace LAMMPS_NS

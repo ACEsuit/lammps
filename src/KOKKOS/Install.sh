@@ -106,6 +106,14 @@ action compute_composition_atom_kokkos.cpp compute_composition_atom.cpp
 action compute_composition_atom_kokkos.h compute_composition_atom.h
 action compute_orientorder_atom_kokkos.cpp
 action compute_orientorder_atom_kokkos.h
+action compute_sna_grid_kokkos.cpp compute_sna_grid.cpp
+action compute_sna_grid_kokkos.h compute_sna_grid.h
+action compute_sna_grid_kokkos_impl.h compute_sna_grid.cpp
+action compute_sna_grid_local_kokkos.cpp compute_sna_grid_local.cpp
+action compute_sna_grid_local_kokkos.h compute_sna_grid_local.h
+action compute_sna_grid_local_kokkos_impl.h compute_sna_grid_local.cpp
+action compute_gaussian_grid_local_kokkos.cpp compute_gaussian_grid_local.cpp
+action compute_gaussian_grid_local_kokkos.h compute_gaussian_grid_local.h
 action compute_temp_deform_kokkos.cpp
 action compute_temp_deform_kokkos.h
 action compute_temp_kokkos.cpp
@@ -118,6 +126,8 @@ action dihedral_class2_kokkos.cpp dihedral_class2.cpp
 action dihedral_class2_kokkos.h dihedral_class2.h
 action dihedral_harmonic_kokkos.cpp dihedral_harmonic.cpp
 action dihedral_harmonic_kokkos.h dihedral_harmonic.h
+action dihedral_multi_harmonic_kokkos.cpp dihedral_multi_harmonic.cpp
+action dihedral_multi_harmonic_kokkos.h dihedral_multi_harmonic.h
 action dihedral_opls_kokkos.cpp dihedral_opls.cpp
 action dihedral_opls_kokkos.h dihedral_opls.h
 action dihedral_hybrid_kokkos.cpp dihedral_hybrid.cpp
@@ -131,12 +141,18 @@ action fft3d_kokkos.h fft3d.h
 action fftdata_kokkos.h fft3d.h
 action fix_acks2_reaxff_kokkos.cpp fix_acks2_reaxff.cpp
 action fix_acks2_reaxff_kokkos.h fix_acks2_reaxff.h
+action fix_cmap_kokkos.cpp fix_cmap.cpp
+action fix_cmap_kokkos.h fix_cmap.h
+action fix_colvars_kokkos.cpp fix_colvars.cpp
+action fix_colvars_kokkos.h fix_colvars.h
 action fix_deform_kokkos.cpp
 action fix_deform_kokkos.h
 action fix_dpd_energy_kokkos.cpp fix_dpd_energy.cpp
 action fix_dpd_energy_kokkos.h fix_dpd_energy.h
 action fix_dt_reset_kokkos.cpp
 action fix_dt_reset_kokkos.h
+action fix_electron_stopping_kokkos.cpp fix_electron_stopping.cpp
+action fix_electron_stopping_kokkos.h fix_electron_stopping.h
 action fix_enforce2d_kokkos.cpp
 action fix_enforce2d_kokkos.h
 action fix_efield_kokkos.cpp
@@ -163,6 +179,8 @@ action fix_npt_kokkos.cpp
 action fix_npt_kokkos.h
 action fix_nve_kokkos.cpp
 action fix_nve_kokkos.h
+action fix_nve_limit_kokkos.cpp
+action fix_nve_limit_kokkos.h
 action fix_nve_sphere_kokkos.cpp
 action fix_nve_sphere_kokkos.h
 action fix_nvt_kokkos.cpp
@@ -179,6 +197,8 @@ action compute_reaxff_atom_kokkos.cpp compute_reaxff_atom.cpp
 action compute_reaxff_atom_kokkos.h compute_reaxff_atom.h
 action fix_reaxff_species_kokkos.cpp fix_reaxff_species.cpp
 action fix_reaxff_species_kokkos.h fix_reaxff_species.h
+action fix_recenter_kokkos.cpp
+action fix_recenter_kokkos.h
 action fix_rx_kokkos.cpp fix_rx.cpp
 action fix_rx_kokkos.h fix_rx.h
 action fix_setforce_kokkos.cpp
@@ -205,8 +225,11 @@ action fix_wall_lj93_kokkos.cpp
 action fix_wall_lj93_kokkos.h
 action fix_wall_reflect_kokkos.cpp
 action fix_wall_reflect_kokkos.h
+action fix_wall_region_kokkos.cpp
+action fix_wall_region_kokkos.h
 action grid3d_kokkos.cpp fft3d.h
 action grid3d_kokkos.h fft3d.h
+action group_kokkos.h
 action improper_class2_kokkos.cpp improper_class2.cpp
 action improper_class2_kokkos.h improper_class2.h
 action improper_harmonic_kokkos.cpp improper_harmonic.cpp
@@ -277,6 +300,8 @@ action npair_trim_kokkos.h
 action pack_kokkos.h pack.h
 action pair_adp_kokkos.cpp pair_adp.cpp
 action pair_adp_kokkos.h pair_adp.h
+action pair_brownian_kokkos.cpp pair_brownian.cpp
+action pair_brownian_kokkos.h pair_brownian.h
 action pair_buck_coul_cut_kokkos.cpp
 action pair_buck_coul_cut_kokkos.h
 action pair_buck_coul_long_kokkos.cpp pair_buck_coul_long.cpp
@@ -407,6 +432,8 @@ action rand_pool_wrap_kokkos.cpp
 action rand_pool_wrap_kokkos.h
 action region_block_kokkos.cpp
 action region_block_kokkos.h
+action region_sphere_kokkos.cpp
+action region_sphere_kokkos.h
 action remap_kokkos.cpp remap.cpp
 action remap_kokkos.h remap.h
 action sna_kokkos_impl.h sna.cpp

@@ -38,6 +38,7 @@ using namespace FixConst;
 enum { NONE, CONSTANT };
 
 static const char cite_rheo_oxide[] =
+    "RHEO oxidation: doi:10.1016/j.apm.2024.02.027\n\n"
     "@article{ApplMathModel.130.310,\n"
     " title = {A hybrid smoothed-particle hydrodynamics model of oxide skins on molten aluminum},\n"
     " journal = {Applied Mathematical Modelling},\n"
@@ -55,7 +56,7 @@ static const char cite_rheo_oxide[] =
 FixRHEOOxidation::FixRHEOOxidation(LAMMPS *lmp, int narg, char **arg) :
     Fix(lmp, narg, arg), compute_surface(nullptr), fix_rheo(nullptr)
 {
-  if (narg != 6) error->all(FLERR, "Illegal fix command");
+  if (narg != 6) error->all(FLERR, "Illegal fix rheo/oxidation command");
 
   force_reneighbor = 1;
   next_reneighbor = -1;
@@ -69,16 +70,12 @@ FixRHEOOxidation::FixRHEOOxidation(LAMMPS *lmp, int narg, char **arg) :
     error->all(FLERR, "Illegal value {} for bond type in fix rheo/oxidation", btype);
 
   rsurf = utils::numeric(FLERR, arg[5], false, lmp);
-  if (rsurf <= 0.0) error->all(FLERR, "Illegal surface distance {} in fix rheo/oxidation", cut);
+  if (rsurf <= 0.0) error->all(FLERR, "Illegal surface distance {} in fix rheo/oxidation", rsurf);
 
   cutsq = cut * cut;
 
   if (lmp->citeme) lmp->citeme->add(cite_rheo_oxide);
 }
-
-/* ---------------------------------------------------------------------- */
-
-FixRHEOOxidation::~FixRHEOOxidation() {}
 
 /* ---------------------------------------------------------------------- */
 
@@ -109,10 +106,9 @@ void FixRHEOOxidation::init()
   int tmp1, tmp2;
   index_nb = atom->find_custom("shell_nbond", tmp1, tmp2);
   if (index_nb == -1) error->all(FLERR, "Must use bond style rheo/shell to use fix rheo/oxidation");
-  nbond = atom->ivector[index_nb];
 
   // need a half neighbor list
-  auto req = neighbor->add_request(this, NeighConst::REQ_FULL);
+  auto *req = neighbor->add_request(this, NeighConst::REQ_FULL);
   req->set_cutoff(cut);
 }
 
@@ -240,6 +236,7 @@ void FixRHEOOxidation::post_integrate()
 
   int added_bonds_all;
   MPI_Allreduce(&added_bonds, &added_bonds_all, 1, MPI_INT, MPI_SUM, world);
+  atom->nbonds += added_bonds_all;
 
   if (added_bonds_all > 0) next_reneighbor = update->ntimestep;
 }

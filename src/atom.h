@@ -16,6 +16,8 @@
 
 #include "pointers.h"
 
+#include "json_fwd.h"
+
 #include <map>
 #include <set>
 
@@ -119,13 +121,10 @@ class Atom : protected Pointers {
 
   double **sp, **fm, **fm_long;
 
-  // EFF and AWPMD packages
+  // EFF package
 
   int *spin;
   double *eradius, *ervel, *erforce;
-  double *ervelforce;
-  double **cs, **csforce, **vforce;
-  int *etag;
 
   // CG-DNA package
 
@@ -177,6 +176,11 @@ class Atom : protected Pointers {
 
   double *area, *ed, *em, *epsilon, *curvature, *q_scaled;
 
+  // APIP package
+
+  double *apip_lambda, *apip_lambda_input, *apip_lambda_input_ta, *apip_e_fast, *apip_e_precise, **apip_f_const_lambda, **apip_f_dyn_lambda, *apip_lambda_const;
+  int *apip_lambda_required;
+
   // end of customization section
   // --------------------------------------------------------------------
 
@@ -188,15 +192,13 @@ class Atom : protected Pointers {
 
   int labelmapflag, types_style;
   int ellipsoid_flag, line_flag, tri_flag, body_flag;
-  int peri_flag, electron_flag;
-  int wavepacket_flag, sph_flag;
+  int peri_flag, electron_flag, sph_flag;
 
   int molecule_flag, molindex_flag, molatom_flag;
   int q_flag, mu_flag;
   int rmass_flag, radius_flag, omega_flag, torque_flag, angmom_flag, quat_flag;
   int temperature_flag, heatflow_flag;
   int vfrac_flag, spin_flag, eradius_flag, ervel_flag, erforce_flag;
-  int cs_flag, csforce_flag, vforce_flag, ervelforce_flag, etag_flag;
   int rheo_status_flag, conductivity_flag, pressure_flag, viscosity_flag;
   int rho_flag, esph_flag, cv_flag, vest_flag;
   int dpd_flag, edpd_flag, tdpd_flag;
@@ -224,6 +226,10 @@ class Atom : protected Pointers {
   // DIELECTRIC package
 
   int dielectric_flag;
+
+  // APIP package
+
+  int apip_lambda_flag, apip_e_fast_flag, apip_e_precise_flag, apip_lambda_input_flag, apip_lambda_input_ta_flag, apip_lambda_required_flag, apip_f_const_lambda_flag, apip_f_dyn_lambda_flag, apip_lambda_const_flag;
 
   // end of customization section
   // --------------------------------------------------------------------
@@ -303,8 +309,8 @@ class Atom : protected Pointers {
 
   // AtomVec factory types and map
 
-  typedef AtomVec *(*AtomVecCreator)(LAMMPS *);
-  typedef std::map<std::string, AtomVecCreator> AtomVecCreatorMap;
+  using AtomVecCreator = AtomVec *(*)(LAMMPS *);
+  using AtomVecCreatorMap = std::map<std::string, AtomVecCreator>;
   AtomVecCreatorMap *avec_map;
 
   // --------------------------------------------------------------------
@@ -358,6 +364,7 @@ class Atom : protected Pointers {
   int shape_consistency(int, double &, double &, double &);
 
   void add_molecule(int, char **);
+  void add_molecule(const std::string &, const json &);
   int find_molecule(const char *);
   std::vector<Molecule *> get_molecule_by_id(const std::string &);
   void add_molecule_atom(Molecule *, int, int, tagint);
@@ -378,6 +385,7 @@ class Atom : protected Pointers {
 
   void *extract(const char *);
   int extract_datatype(const char *);
+  int extract_size(const char *, int);
 
   inline int *get_map_array() { return map_array; };
   inline int get_map_size() { return map_tag_max + 1; };

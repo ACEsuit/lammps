@@ -28,9 +28,8 @@ gives those details.
 
    * :ref:`ADIOS <PKG-ADIOS>`
    * :ref:`AMOEBA <PKG-AMOEBA>`
+   * :ref:`APIP <PKG-APIP>`
    * :ref:`ASPHERE <PKG-ASPHERE>`
-   * :ref:`ATC <PKG-ATC>`
-   * :ref:`AWPMD <PKG-AWPMD>`
    * :ref:`BOCS <PKG-BOCS>`
    * :ref:`BODY <PKG-BODY>`
    * :ref:`BPM <PKG-BPM>`
@@ -97,7 +96,6 @@ gives those details.
    * :ref:`PHONON <PKG-PHONON>`
    * :ref:`PLUGIN <PKG-PLUGIN>`
    * :ref:`PLUMED <PKG-PLUMED>`
-   * :ref:`POEMS <PKG-POEMS>`
    * :ref:`PTM <PKG-PTM>`
    * :ref:`PYTHON <PKG-PYTHON>`
    * :ref:`QEQ <PKG-QEQ>`
@@ -186,6 +184,60 @@ provided by the Ponder group in their
 
 ----------
 
+.. _PKG-APIP:
+
+APIP package
+------------
+
+**Contents:**
+
+This package provides adaptive-precision interatomic potentials (APIP) as
+described in:
+
+D. Immel, R. Drautz and G. Sutmann, "Adaptive-precision potentials for
+large-scale atomistic simulations", J. Chem. Phys. 162, 114119 (2025)
+`link <immel2025_doi_>`_
+
+Adaptive-precision means, that a fast interatomic potential, such as EAM,
+is coupled to a precise interatomic potential, such as ACE.
+This package provides the required pair_styles and fixes to run an efficient,
+energy-conserving adaptive-precision simulation.
+
+In the context of this package, precision refers to the accuracy of an interatomic
+potential.
+
+.. _immel2025_doi: https://doi.org/10.1063/5.0245877
+
+**Authors:**
+
+This package was written by David Immel^1,
+Ralf Drautz^2 and Godehard Sutmann^1^2.
+
+ ^1: Forschungszentrum Juelich, Juelich, Germany
+
+ ^2: Ruhr-University Bochum, Bochum, Germany
+
+**Install:**
+
+The APIP package requires also the installation of ML-PACE, which has
+:ref:`specific installation instructions <ml-pace>` on the
+:doc:`Build extras <Build_extras>` page.
+
+**Supporting info:**
+
+* ``src/APIP``: filenames -> commands
+* :doc:`Howto APIP <Howto_apip>`
+* ``examples/PACKAGES/apip``
+* :doc:`fix atom_weight/apip <fix_atom_weight_apip>`
+* :doc:`fix lambda/apip <fix_lambda_apip>`
+* :doc:`fix lambda_thermostat/apip <fix_lambda_thermostat_apip>`
+* :doc:`pair_style eam/apip <pair_eam_apip>`
+* :doc:`pair_style lambda/zone/apip <pair_lambda_zone_apip>`
+* :doc:`pair_style lambda/input/apip <pair_lambda_input_apip>`
+* :doc:`pair_style pace/apip <pair_pace_apip>`
+
+----------
+
 .. _PKG-ASPHERE:
 
 ASPHERE package
@@ -209,63 +261,6 @@ particle models including ellipsoids, 2d lines, and 3d triangles.
 * ``examples/ellipse``
 * https://www.lammps.org/movies.html#line
 * https://www.lammps.org/movies.html#tri
-
-----------
-
-.. _PKG-ATC:
-
-ATC package
-----------------
-
-**Contents:**
-
-ATC stands for atoms-to-continuum.  This package implements a
-:doc:`fix atc <fix_atc>` command to either couple molecular dynamics
-with continuum finite element equations or perform on-the-fly
-conversion of atomic information to continuum fields.
-
-**Authors:** Reese Jones, Jeremy Templeton, Jon Zimmerman (Sandia).
-
-**Install:**
-
-This package has :ref:`specific installation instructions <atc>` on the
-:doc:`Build extras <Build_extras>` page.  The ATC package requires that
-also the :ref:`MANYBODY <PKG-MANYBODY>` package is installed.
-
-**Supporting info:**
-
-* ``src/ATC``: filenames -> commands
-* ``src/ATC/README``
-* :doc:`fix atc <fix_atc>`
-* ``examples/PACKAGES/atc``
-* https://www.lammps.org/pictures.html#atc
-
-----------
-
-.. _PKG-AWPMD:
-
-AWPMD package
-------------------
-
-**Contents:**
-
-AWPMD stands for Antisymmetrized Wave Packet Molecular Dynamics.  This
-package implements an atom, pair, and fix style which allows electrons
-to be treated as explicit particles in a classical molecular dynamics
-model.
-
-**Author:** Ilya Valuev (JIHT, Russia).
-
-**Install:**
-
-This package has :ref:`specific installation instructions <awpmd>` on the :doc:`Build extras <Build_extras>` page.
-
-**Supporting info:**
-
-* ``src/AWPMD``: filenames -> commands
-* ``src/AWPMD/README``
-* :doc:`pair_style awpmd/cut <pair_awpmd>`
-* ``examples/PACKAGES/awpmd``
 
 ----------
 
@@ -727,7 +722,6 @@ algorithm.
 * :doc:`pair_style tdpd <pair_mesodpd>`
 * :doc:`fix mvv/dpd <fix_mvv_dpd>`
 * ``examples/PACKAGES/mesodpd``
-* https://www.lammps.org/movies.html#mesodpd
 
 ----------
 
@@ -880,7 +874,7 @@ groups of atoms that interact with the remaining atoms as electrolyte.
 
 **Authors:** The ELECTRODE package is written and maintained by Ludwig
 Ahrens-Iwers (TUHH, Hamburg, Germany), Shern Tee (UQ, Brisbane, Australia) and
-Robert Meissner (TUHH, Hamburg, Germany).
+Robert Meissner (Helmholtz-Zentrum Hereon, Geesthacht and TUHH, Hamburg, Germany).
 
 .. versionadded:: 4May2022
 
@@ -994,6 +988,7 @@ Additional pair styles that are less commonly used.
 
 * ``src/EXTRA-PAIR``: filenames -> commands
 * :doc:`pair_style <pair_style>`
+* ``examples/PACKAGES/dispersion``
 
 ----------
 
@@ -1111,7 +1106,7 @@ H5MD is a format for molecular simulations, built on top of HDF5.
 This package implements a :doc:`dump h5md <dump_h5md>` command to output
 LAMMPS snapshots in this format.
 
-.. _HDF5: https://www.hdfgroup.org/solutions/hdf5
+.. _HDF5: https://www.hdfgroup.org/solutions/hdf5/
 
 To use this package you must have the HDF5 library available on your
 system.
@@ -1456,7 +1451,6 @@ This package has :ref:`specific installation instructions <machdyn>` on the :doc
 * ``src/MACHDYN/README``
 * `doc/PDF/MACHDYN_LAMMPS_userguide.pdf <PDF/MACHDYN_LAMMPS_userguide.pdf>`_
 * ``examples/PACKAGES/machdyn``
-* https://www.lammps.org/movies.html#smd
 
 ----------
 
@@ -2069,7 +2063,7 @@ support for new file formats can be added to LAMMPS (or VMD or other
 programs that use them) without having to re-compile the application
 itself.  More information about the VMD molfile plugins can be found
 at
-`https://www.ks.uiuc.edu/Research/vmd/plugins/molfile <https://www.ks.uiuc.edu/Research/vmd/plugins/molfile>`_.
+`https://www.ks.uiuc.edu/Research/vmd/plugins/molfile <https://www.ks.uiuc.edu/Research/vmd/plugins/molfile/>`_.
 
 **Author:** Axel Kohlmeyer (Temple U).
 
@@ -2171,8 +2165,8 @@ the :doc:`Build extras <Build_extras>` page.
 * ``src/OPENMP/README``
 * :doc:`Accelerator packages <Speed_packages>`
 * :doc:`OPENMP package <Speed_omp>`
-* :doc:`Command line option -suffix/-sf omp <Run_options>`
-* :doc:`Command line option -package/-pk omp <Run_options>`
+* :doc:`Command-line option -suffix/-sf omp <Run_options>`
+* :doc:`Command-line option -package/-pk omp <Run_options>`
 * :doc:`package omp <package>`
 * Search the :doc:`commands <Commands_all>` pages (:doc:`fix <Commands_fix>`, :doc:`compute <Commands_compute>`,
   :doc:`pair <Commands_pair>`, :doc:`bond, angle, dihedral, improper <Commands_bond>`,
@@ -2260,7 +2254,7 @@ Foster (UTSA).
 * :doc:`compute damage/atom <compute_damage_atom>`
 * :doc:`compute plasticity/atom <compute_plasticity_atom>`
 * ``examples/peri``
-* https://www.lammps.org/movies.html#peri
+* https://www.lammps.org/movies.html#impact
 
 ----------
 
@@ -2358,35 +2352,6 @@ as a plugin to avoid licensing conflicts when distributing binaries.
 
 ----------
 
-.. _PKG-POEMS:
-
-POEMS package
--------------
-
-**Contents:**
-
-A fix that wraps the Parallelizable Open source Efficient Multibody
-Software (POEMS) library, which is able to simulate the dynamics of
-articulated body systems.  These are systems with multiple rigid
-bodies (collections of particles) whose motion is coupled by
-connections at hinge points.
-
-**Author:** Rudra Mukherjee (JPL) while at RPI.
-
-**Install:**
-
-This package has :ref:`specific installation instructions <poems>` on the :doc:`Build extras <Build_extras>` page.
-
-**Supporting info:**
-
-* ``src/POEMS``: filenames -> commands
-* ``src/POEMS/README``
-* ``lib/poems/README``
-* :doc:`fix poems <fix_poems>`
-* ``examples/rigid``
-
-----------
-
 .. _PKG-PTM:
 
 PTM package
@@ -2427,7 +2392,7 @@ ways to use LAMMPS and Python together.
 
    Building with the PYTHON package assumes you have a Python development
    environment (headers and libraries) available on your system, which needs
-   to be either Python version 2.7 or Python 3.5 and later.
+   to be Python version 3.6 or later.
 
 **Install:**
 
@@ -2701,7 +2666,7 @@ SCAFACOS package
 
 **Contents:**
 
-A KSpace style which wraps the `ScaFaCoS Coulomb solver library <http://www.scafacos.de>`_ to compute long-range Coulombic
+A KSpace style which wraps the `ScaFaCoS Coulomb solver library <http://www.scafacos.de/>`_ to compute long-range Coulombic
 interactions.
 
 To use this package you must have the ScaFaCoS library available on
@@ -2789,14 +2754,15 @@ implements smoothed particle hydrodynamics (SPH) for liquids.  See the
 related :ref:`MACHDYN package <PKG-MACHDYN>` package for smooth Mach dynamics
 (SMD) for solids.
 
-This package contains ideal gas, Lennard-Jones equation of states,
-Tait, and full support for complete (i.e. internal-energy dependent)
-equations of state.  It allows for plain or Monaghans XSPH integration
-of the equations of motion.  It has options for density continuity or
-density summation to propagate the density field.  It has
-:doc:`set <set>` command options to set the internal energy and density
-of particles from the input script and allows the same quantities to
-be output with thermodynamic output or to dump files via the :doc:`compute property/atom <compute_property_atom>` command.
+This package contains ideal gas, Lennard-Jones equation of states, Tait,
+and full support for complete (i.e. internal-energy dependent) equations
+of state.  It allows for plain or Monaghans XSPH integration of the
+equations of motion.  It has options for density continuity or density
+summation to propagate the density field.  It has :doc:`set <set>`
+command options to set the internal energy and density of particles from
+the input script and allows the same quantities to be output with
+thermodynamic output or to dump files via the :doc:`compute
+property/atom <compute_property_atom>` command.
 
 **Author:** Georg Ganzenmuller (Fraunhofer-Institute for High-Speed
 Dynamics, Ernst Mach Institute, Germany).
@@ -2808,6 +2774,17 @@ Dynamics, Ernst Mach Institute, Germany).
 * `doc/PDF/SPH_LAMMPS_userguide.pdf <PDF/SPH_LAMMPS_userguide.pdf>`_
 * ``examples/PACKAGES/sph``
 * https://www.lammps.org/movies.html#sph
+
+.. note::
+
+   Please note that the SPH PDF guide file has not been updated for
+   many years and thus does not reflect the current *syntax* of the
+   SPH package commands. For that please refer to the LAMMPS manual.
+
+.. note::
+
+   Please also note, that the :ref:`RHEO package <PKG-RHEO>` offers
+   similar functionality in a more modern and flexible implementation.
 
 ----------
 
@@ -2959,7 +2936,7 @@ A :doc:`dump vtk <dump_vtk>` command which outputs snapshot info in the
 `VTK format <vtk_>`_, enabling visualization by `Paraview <paraview_>`_ or
 other visualization packages.
 
-.. _vtk: https://www.vtk.org
+.. _vtk: https://vtk.org
 
 .. _paraview: https://www.paraview.org
 
@@ -2998,7 +2975,7 @@ which discuss the `QuickFF <quickff_>`_ methodology.
 
 .. _vanduyfhuys2015: https://doi.org/10.1002/jcc.23877
 .. _vanduyfhuys2018: https://doi.org/10.1002/jcc.25173
-.. _quickff: https://molmod.github.io/QuickFF
+.. _quickff: https://molmod.github.io/QuickFF/
 .. _yaff: https://github.com/molmod/yaff
 
 **Author:** Steven Vandenbrande.

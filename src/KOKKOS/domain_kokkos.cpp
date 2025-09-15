@@ -40,13 +40,14 @@ template<class DeviceType>
 struct DomainResetBoxFunctor{
 public:
   typedef DeviceType device_type;
-  typename ArrayTypes<DeviceType>::t_x_array x;
+  typedef ArrayTypes<DeviceType> AT;
+  typename AT::t_kkfloat_1d_3_lr x;
 
   struct value_type {
     double value[3][2] ;
   };
 
-  DomainResetBoxFunctor(DAT::tdual_x_array _x):
+  DomainResetBoxFunctor(DAT::ttransform_kkfloat_1d_3_lr _x):
     x(_x.view<DeviceType>()) {}
 
   KOKKOS_INLINE_FUNCTION
@@ -217,17 +218,18 @@ void DomainKokkos::reset_box()
 template<class DeviceType, int PERIODIC, int DEFORM_VREMAP>
 struct DomainPBCFunctor {
   typedef DeviceType device_type;
+  typedef ArrayTypes<DeviceType> AT;
   double lo[3],hi[3],period[3];
-  typename ArrayTypes<DeviceType>::t_x_array x;
-  typename ArrayTypes<DeviceType>::t_v_array v;
-  typename ArrayTypes<DeviceType>::t_int_1d mask;
-  typename ArrayTypes<DeviceType>::t_imageint_1d image;
+  typename AT::t_kkfloat_1d_3_lr x;
+  typename AT::t_kkfloat_1d_3 v;
+  typename AT::t_int_1d mask;
+  typename AT::t_imageint_1d image;
   int deform_groupbit;
   double h_rate[6];
   int xperiodic,yperiodic,zperiodic;
 
   DomainPBCFunctor(double* _lo, double* _hi, double* _period,
-                   DAT::tdual_x_array _x, DAT::tdual_v_array _v,
+                   DAT::ttransform_kkfloat_1d_3_lr _x, DAT::ttransform_kkfloat_1d_3 _v,
                    DAT::tdual_int_1d _mask, DAT::tdual_imageint_1d _image,
                    int _deform_groupbit, double* _h_rate,
                    int _xperiodic, int _yperiodic, int _zperiodic):
@@ -340,7 +342,7 @@ struct DomainPBCFunctor {
 void DomainKokkos::pbc()
 {
 
-  if (lmp->kokkos->exchange_comm_classic) {
+  if (lmp->kokkos->exchange_comm_legacy) {
 
    // reduce GPU data movement
 
@@ -412,8 +414,8 @@ void DomainKokkos::remap_all()
 {
   atomKK->sync(Device,X_MASK | IMAGE_MASK);
 
-  x = atomKK->k_x.view<LMPDeviceType>();
-  image = atomKK->k_image.view<LMPDeviceType>();
+  x = atomKK->k_x.d_view;
+  image = atomKK->k_image.d_view;
   int nlocal = atomKK->nlocal;
 
   if (triclinic == 0) {
@@ -531,7 +533,7 @@ void DomainKokkos::image_flip(int m_in, int n_in, int p_in)
 
   atomKK->sync(Device,IMAGE_MASK);
 
-  image = atomKK->k_image.view<LMPDeviceType>();
+  image = atomKK->k_image.d_view;
   int nlocal = atomKK->nlocal;
 
   copymode = 1;
@@ -563,8 +565,7 @@ void DomainKokkos::operator()(TagDomain_image_flip, const int &i) const {
 void DomainKokkos::lamda2x(int n)
 {
   atomKK->sync(Device,X_MASK);
-
-  x = atomKK->k_x.view<LMPDeviceType>();
+  x = atomKK->k_x.d_view;
 
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<LMPDeviceType, TagDomain_lamda2x>(0,n),*this);
@@ -573,13 +574,39 @@ void DomainKokkos::lamda2x(int n)
   atomKK->modified(Device,X_MASK);
 }
 
+void DomainKokkos::lamda2x(int n, int groupbit_in)
+{
+  atomKK->sync(Device,X_MASK);
+  x = atomKK->k_x.d_view;
+  mask = atomKK->k_mask.d_view;
+  mask = atomKK->k_mask.d_view;
+  groupbit = groupbit_in;
+
+  copymode = 1;
+  Kokkos::parallel_for(Kokkos::RangePolicy<LMPDeviceType, TagDomain_lamda2x_group>(0,n),*this);
+  copymode = 0;
+
+  atomKK->modified(Device,X_MASK);
+}
+
 KOKKOS_INLINE_FUNCTION
 void DomainKokkos::operator()(TagDomain_lamda2x, const int &i) const {
-  const double xi1 = x(i,1);
-  const double xi2 = x(i,2);
+  const KK_FLOAT xi1 = x(i,1);
+  const KK_FLOAT xi2 = x(i,2);
   x(i,0) = h[0]*x(i,0) + h[5]*xi1 + h[4]*xi2 + boxlo[0];
   x(i,1) = h[1]*xi1 + h[3]*xi2 + boxlo[1];
   x(i,2) = h[2]*xi2 + boxlo[2];
+}
+
+KOKKOS_INLINE_FUNCTION
+void DomainKokkos::operator()(TagDomain_lamda2x_group, const int &i) const {
+  if (mask[i] & groupbit) {
+    const KK_FLOAT xi1 = x(i,1);
+    const KK_FLOAT xi2 = x(i,2);
+    x(i,0) = h[0]*x(i,0) + h[5]*xi1 + h[4]*xi2 + boxlo[0];
+    x(i,1) = h[1]*xi1 + h[3]*xi2 + boxlo[1];
+    x(i,2) = h[2]*xi2 + boxlo[2];
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -590,8 +617,7 @@ void DomainKokkos::operator()(TagDomain_lamda2x, const int &i) const {
 void DomainKokkos::x2lamda(int n)
 {
   atomKK->sync(Device,X_MASK);
-
-  x = atomKK->k_x.view<LMPDeviceType>();
+  x = atomKK->k_x.d_view;
 
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<LMPDeviceType, TagDomain_x2lamda>(0,n),*this);
@@ -600,9 +626,23 @@ void DomainKokkos::x2lamda(int n)
   atomKK->modified(Device,X_MASK);
 }
 
+void DomainKokkos::x2lamda(int n, int groupbit_in)
+{
+  atomKK->sync(Device,X_MASK);
+  x = atomKK->k_x.d_view;
+  mask = atomKK->k_mask.d_view;
+  groupbit = groupbit_in;
+
+  copymode = 1;
+  Kokkos::parallel_for(Kokkos::RangePolicy<LMPDeviceType, TagDomain_x2lamda_group>(0,n),*this);
+  copymode = 0;
+
+  atomKK->modified(Device,X_MASK);
+}
+
 KOKKOS_INLINE_FUNCTION
 void DomainKokkos::operator()(TagDomain_x2lamda, const int &i) const {
-  F_FLOAT delta[3];
+  KK_FLOAT delta[3];
   delta[0] = x(i,0) - boxlo[0];
   delta[1] = x(i,1) - boxlo[1];
   delta[2] = x(i,2) - boxlo[2];
@@ -610,5 +650,19 @@ void DomainKokkos::operator()(TagDomain_x2lamda, const int &i) const {
   x(i,0) = h_inv[0]*delta[0] + h_inv[5]*delta[1] + h_inv[4]*delta[2];
   x(i,1) = h_inv[1]*delta[1] + h_inv[3]*delta[2];
   x(i,2) = h_inv[2]*delta[2];
+}
+
+KOKKOS_INLINE_FUNCTION
+void DomainKokkos::operator()(TagDomain_x2lamda_group, const int &i) const {
+  if (mask[i] & groupbit) {
+    KK_FLOAT delta[3];
+    delta[0] = x(i,0) - boxlo[0];
+    delta[1] = x(i,1) - boxlo[1];
+    delta[2] = x(i,2) - boxlo[2];
+
+    x(i,0) = h_inv[0]*delta[0] + h_inv[5]*delta[1] + h_inv[4]*delta[2];
+    x(i,1) = h_inv[1]*delta[1] + h_inv[3]*delta[2];
+    x(i,2) = h_inv[2]*delta[2];
+  }
 }
 

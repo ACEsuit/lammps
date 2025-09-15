@@ -51,6 +51,7 @@
 #include <cstring>
 #include <cerrno>
 #include <cctype>
+#include <filesystem>
 
 using namespace LAMMPS_NS;
 
@@ -89,7 +90,7 @@ Variable class which performs computations and text substitutions.
 \verbatim embed:rst
 
 This sets up the input processing, processes the *-var* and *-echo*
-command line flags, holds the factory of commands and creates and
+command-line flags, holds the factory of commands and creates and
 initializes an instance of the Variable class.
 
 To execute a command, a specific class instance, derived from
@@ -188,7 +189,7 @@ Input::~Input()
 
 This will read lines from *infile*, parse and execute them until the end
 of the file is reached.  The *infile* pointer will usually point to
-``stdin`` or the input file given with the ``-in`` command line flag.
+``stdin`` or the input file given with the ``-in`` command-line flag.
 
 \endverbatim */
 
@@ -423,7 +424,7 @@ void Input::write_echo(const std::string &txt)
 }
 
 /* ----------------------------------------------------------------------
-   parse copy of command line by inserting string terminators
+   parse copy of command-line by inserting string terminators
    strip comment = all chars from # on
    replace all $ via variable substitution except within quotes
    command = first word
@@ -585,7 +586,6 @@ void Input::substitute(char *&str, char *&str2, int &max, int &max2, int flag)
   int i,n,paren_count,nchars;
   char immediate[256];
   char *var,*value,*beyond;
-  int quoteflag = 0;
   char *ptrmatch;
 
   char *ptr = str;
@@ -599,7 +599,7 @@ void Input::substitute(char *&str, char *&str2, int &max, int &max2, int flag)
 
     // variable substitution
 
-    if (*ptr == '$' && !quoteflag) {
+    if (*ptr == '$') {
 
       // value = ptr to expanded variable
       // variable name between curly braces, e.g. ${a}
@@ -610,7 +610,7 @@ void Input::substitute(char *&str, char *&str2, int &max, int &max2, int flag)
 
         while (var[i] != '\0' && var[i] != '}') i++;
 
-        if (var[i] == '\0') error->one(FLERR,"Invalid variable name");
+        if (var[i] == '\0') error->one(FLERR,"Invalid variable name {}", var);
         var[i] = '\0';
         beyond = ptr + strlen(var) + 3;
         value = variable->retrieve(var);
@@ -663,7 +663,7 @@ void Input::substitute(char *&str, char *&str2, int &max, int &max2, int flag)
       }
 
       if (value == nullptr)
-        error->one(FLERR,"Substitution for illegal variable {}",var);
+        error->one(FLERR,"Substitution for illegal variable {}"+utils::errorurl(13),var);
 
       // check if storage in str2 needs to be expanded
       // re-initialize ptr and ptr2 to the point beyond the variable.
@@ -950,7 +950,7 @@ void Input::ifthenelse()
     int ncommands = last-first + 1;
     if (ncommands <= 0) utils::missing_cmd_args(FLERR, "if then", error);
 
-    auto commands = new char*[ncommands];
+    auto *commands = new char*[ncommands];
     ncommands = 0;
     for (int i = first; i <= last; i++) {
       n = strlen(arg[i]) + 1;
@@ -1003,7 +1003,7 @@ void Input::ifthenelse()
     int ncommands = last-first + 1;
     if (ncommands <= 0) utils::missing_cmd_args(FLERR, "if elif/else", error);
 
-    auto commands = new char*[ncommands];
+    auto *commands = new char*[ncommands];
     ncommands = 0;
     for (int i = first; i <= last; i++) {
       n = strlen(arg[i]) + 1;
@@ -1151,7 +1151,7 @@ void Input::partition()
 
   char *cmd = strstr(line,arg[2]);
 
-  // execute the remaining command line on requested partitions
+  // execute the remaining command-line on requested partitions
 
   if (yesflag) {
     if (universe->iworld+1 >= ilo && universe->iworld+1 <= ihi) one(cmd);
@@ -1263,7 +1263,7 @@ void Input::shell()
   } else if (strcmp(arg[0],"mv") == 0) {
     if (narg != 3) error->all(FLERR,"Illegal shell command: expected 3 argument but found {}", narg);
     if (me == 0) {
-      if (platform::path_is_directory(arg[2])) {
+      if (std::filesystem::is_directory(arg[2])) {
         if (system(fmt::format("mv {} {}", arg[1], arg[2]).c_str()))
           error->warning(FLERR,"Shell command 'mv {} {}' returned with non-zero status", arg[1], arg[2]);
       } else {
@@ -1347,7 +1347,7 @@ void Input::variable_command()
 void Input::angle_coeff()
 {
   if (domain->box_exist == 0)
-    error->all(FLERR,"Angle_coeff command before simulation box is defined");
+    error->all(FLERR,"Angle_coeff command before simulation box is defined" + utils::errorurl(33));
   if (force->angle == nullptr)
     error->all(FLERR,"Angle_coeff command before angle_style is defined");
   if (atom->avec->angles_allow == 0)
@@ -1382,7 +1382,7 @@ void Input::atom_style()
 {
   if (narg < 1) utils::missing_cmd_args(FLERR, "atom_style", error);
   if (domain->box_exist)
-    error->all(FLERR,"Atom_style command after simulation box is defined");
+    error->all(FLERR,"Atom_style command after simulation box is defined" + utils::errorurl(34));
   atom->create_avec(arg[0],narg-1,&arg[1],1);
 }
 
@@ -1391,7 +1391,7 @@ void Input::atom_style()
 void Input::bond_coeff()
 {
   if (domain->box_exist == 0)
-    error->all(FLERR,"Bond_coeff command before simulation box is defined");
+    error->all(FLERR,"Bond_coeff command before simulation box is defined" + utils::errorurl(33));
   if (force->bond == nullptr)
     error->all(FLERR,"Bond_coeff command before bond_style is defined");
   if (atom->avec->bonds_allow == 0)
@@ -1429,7 +1429,7 @@ void Input::bond_write()
 void Input::boundary()
 {
   if (domain->box_exist)
-    error->all(FLERR,"Boundary command after simulation box is defined");
+    error->all(FLERR,"Boundary command after simulation box is defined" + utils::errorurl(34));
   domain->set_boundary(narg,arg,0);
 }
 
@@ -1486,7 +1486,8 @@ void Input::dielectric()
 void Input::dihedral_coeff()
 {
   if (domain->box_exist == 0)
-    error->all(FLERR,"Dihedral_coeff command before simulation box is defined");
+    error->all(FLERR,"Dihedral_coeff command before simulation box is defined"
+               + utils::errorurl(33));
   if (force->dihedral == nullptr)
     error->all(FLERR,"Dihedral_coeff command before dihedral_style is defined");
   if (atom->avec->dihedrals_allow == 0)
@@ -1514,7 +1515,7 @@ void Input::dimension()
 {
   if (narg != 1) error->all(FLERR, "Dimension command expects exactly 1 argument");
   if (domain->box_exist)
-    error->all(FLERR,"Dimension command after simulation box is defined");
+    error->all(FLERR,"Dimension command after simulation box is defined" + utils::errorurl(34));
   domain->dimension = utils::inumeric(FLERR,arg[0],false,lmp);
   if (domain->dimension != 2 && domain->dimension != 3)
     error->all(FLERR, "Invalid dimension argument: {}", arg[0]);
@@ -1522,7 +1523,7 @@ void Input::dimension()
   // must reset default extra_dof of all computes
   // since some were created before dimension command is encountered
 
-  for (auto &c : modify->get_compute_list()) c->reset_extra_dof();
+  for (const auto &c : modify->get_compute_list()) c->reset_extra_dof();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1565,7 +1566,7 @@ void Input::group_command()
 void Input::improper_coeff()
 {
   if (domain->box_exist == 0)
-    error->all(FLERR,"Improper_coeff command before simulation box is defined");
+    error->all(FLERR,"Improper_coeff command before simulation box is defined" + utils::errorurl(33));
   if (force->improper == nullptr)
     error->all(FLERR,"Improper_coeff command before improper_style is defined");
   if (atom->avec->impropers_allow == 0)
@@ -1607,7 +1608,8 @@ void Input::kspace_style()
 
 void Input::labelmap()
 {
-  if (domain->box_exist == 0) error->all(FLERR,"Labelmap command before simulation box is defined");
+  if (domain->box_exist == 0)
+    error->all(FLERR,"Labelmap command before simulation box is defined" + utils::errorurl(33));
   if (!atom->labelmapflag) atom->add_label_map();
   atom->lmap->modify_lmap(narg,arg);
 }
@@ -1625,7 +1627,7 @@ void Input::mass()
 {
   if (narg != 2) error->all(FLERR,"Illegal mass command: expected 2 arguments but found {}", narg);
   if (domain->box_exist == 0)
-    error->all(FLERR,"Mass command before simulation box is defined");
+    error->all(FLERR,"Mass command before simulation box is defined" + utils::errorurl(33));
   atom->set_mass(FLERR,narg,arg);
 }
 
@@ -1641,7 +1643,7 @@ void Input::min_modify()
 void Input::min_style()
 {
   if (domain->box_exist == 0)
-    error->all(FLERR,"Min_style command before simulation box is defined");
+    error->all(FLERR,"Min_style command before simulation box is defined" + utils::errorurl(33));
   update->create_minimize(narg,arg,1);
 }
 
@@ -1682,11 +1684,13 @@ void Input::newton()
   force->newton_pair = newton_pair;
 
   if (domain->box_exist && (newton_bond != force->newton_bond))
-    error->all(FLERR,"Newton bond change after simulation box is defined");
+    error->all(FLERR,"Newton bond change after simulation box is defined" + utils::errorurl(34));
   force->newton_bond = newton_bond;
 
   if (newton_pair || newton_bond) force->newton = 1;
   else force->newton = 0;
+
+  if (lmp->kokkos) lmp->kokkos->newton_check();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1694,8 +1698,8 @@ void Input::newton()
 void Input::package()
 {
   if (domain->box_exist)
-    error->all(FLERR,"Package command after simulation box is defined");
-  if (narg < 1) error->all(FLERR,"Illegal package command");
+    error->all(FLERR,"Package command after simulation box is defined" + utils::errorurl(34));
+  if (narg < 1) utils::missing_cmd_args(FLERR, "package", error);
 
   // same checks for packages existing as in LAMMPS::post_create()
   // since can be invoked here by package command in input script
@@ -1737,7 +1741,7 @@ void Input::package()
 void Input::pair_coeff()
 {
   if (domain->box_exist == 0)
-    error->all(FLERR,"Pair_coeff command before simulation box is defined");
+    error->all(FLERR,"Pair_coeff command before simulation box is defined" + utils::errorurl(33));
   if (force->pair == nullptr) error->all(FLERR,"Pair_coeff command without a pair style");
   if (narg < 2) utils::missing_cmd_args(FLERR,"pair_coeff", error);
   if (force->pair->one_coeff && ((strcmp(arg[0],"*") != 0) || (strcmp(arg[1],"*") != 0)))
@@ -1818,7 +1822,7 @@ void Input::pair_write()
 void Input::processors()
 {
   if (domain->box_exist)
-    error->all(FLERR,"Processors command after simulation box is defined");
+    error->all(FLERR,"Processors command after simulation box is defined" + utils::errorurl(34));
   comm->set_processors(narg,arg);
 }
 
@@ -1848,7 +1852,7 @@ void Input::restart()
 void Input::run_style()
 {
   if (domain->box_exist == 0)
-    error->all(FLERR,"Run_style command before simulation box is defined");
+    error->all(FLERR,"Run_style command before simulation box is defined" + utils::errorurl(33));
   update->create_integrate(narg,arg,1);
 }
 
@@ -1966,7 +1970,7 @@ void Input::timestep()
   if (respaflag) update->integrate->reset_dt();
 
   if (force->pair) force->pair->reset_dt();
-  for (auto &ifix : modify->get_fix_list()) ifix->reset_dt();
+  for (const auto &ifix : modify->get_fix_list()) ifix->reset_dt();
   output->reset_dt();
 }
 
@@ -2000,7 +2004,7 @@ void Input::units()
 {
   if (narg != 1) error->all(FLERR,"Illegal units command: expected 1 argument but found {}", narg);
   if (domain->box_exist)
-    error->all(FLERR,"Units command after simulation box is defined");
+    error->all(FLERR,"Units command after simulation box is defined" + utils::errorurl(34));
   update->set_units(arg[0]);
 }
 

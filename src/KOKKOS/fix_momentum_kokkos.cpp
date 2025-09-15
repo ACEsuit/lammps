@@ -24,7 +24,8 @@ using namespace LAMMPS_NS;
 using namespace FixConst;
 
 /* ----------------------------------------------------------------------
-   Contributing author: Dan Ibanez (SNL)
+   Contributing authors: Dan Ibanez (SNL)
+                         Mitch Murphy (alphataubio at gmail)
 ------------------------------------------------------------------------- */
 
 /* ---------------------------------------------------------------------- */
@@ -35,6 +36,7 @@ FixMomentumKokkos<DeviceType>::FixMomentumKokkos(LAMMPS *lmp, int narg, char **a
 {
   kokkosable = 1;
   atomKK = (AtomKokkos *) atom;
+  groupKK = (GroupKokkos *)group;
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
   datamask_read = EMPTY_MASK;
   datamask_modify = EMPTY_MASK;
@@ -48,7 +50,7 @@ static double get_kinetic_energy(
     MPI_Comm world,
     int groupbit,
     int nlocal,
-    typename ArrayTypes<DeviceType>::t_v_array_randomread v,
+    typename ArrayTypes<DeviceType>::t_kkfloat_1d_3_randomread v,
     typename ArrayTypes<DeviceType>::t_int_1d_randomread mask)
 {
   using AT = ArrayTypes<DeviceType>;
@@ -56,7 +58,7 @@ static double get_kinetic_energy(
   double ke=0.0;
   if (atomKK->rmass) {
     atomKK->sync(execution_space, RMASS_MASK);
-    typename AT::t_float_1d_randomread rmass = atomKK->k_rmass.view<DeviceType>();
+    typename AT::t_kkfloat_1d_randomread rmass = atomKK->k_rmass.view<DeviceType>();
     Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType>(0,nlocal),
      LAMMPS_LAMBDA(int i, double& update) {
       if (mask(i) & groupbit)
@@ -67,7 +69,7 @@ static double get_kinetic_energy(
     // D.I. : why is there no MASS_MASK ?
     atomKK->sync(execution_space, TYPE_MASK);
     typename AT::t_int_1d_randomread type = atomKK->k_type.view<DeviceType>();
-    typename AT::t_float_1d_randomread mass = atomKK->k_mass.view<DeviceType>();
+    typename AT::t_kkfloat_1d_randomread mass = atomKK->k_mass.view<DeviceType>();
     Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType>(0,nlocal),
      LAMMPS_LAMBDA(int i, double& update) {
       if (mask(i) & groupbit)
@@ -85,15 +87,14 @@ void FixMomentumKokkos<DeviceType>::end_of_step()
 {
   atomKK->sync(execution_space, V_MASK | MASK_MASK);
 
-  typename AT::t_v_array v = atomKK->k_v.view<DeviceType>();
+  typename AT::t_kkfloat_1d_3 v = atomKK->k_v.view<DeviceType>();
   typename AT::t_int_1d_randomread mask = atomKK->k_mask.view<DeviceType>();
 
   const int nlocal = atom->nlocal;
   double ekin_old,ekin_new;
   ekin_old = ekin_new = 0.0;
 
-  if (dynamic)
-    masstotal = group->mass(igroup); // change once Group is ported to Kokkos
+  if (dynamic) masstotal = groupKK->mass_kk<DeviceType>(igroup);
 
   // do nothing if group is empty, i.e. mass is zero;
 
@@ -107,12 +108,8 @@ void FixMomentumKokkos<DeviceType>::end_of_step()
 
   auto groupbit2 = groupbit;
   if (linear) {
-    /* this is needed because Group is not Kokkos-aware ! */
-    atomKK->sync(ExecutionSpaceFromDevice<LMPHostType>::space,
-        V_MASK | MASK_MASK | TYPE_MASK | RMASS_MASK);
-    Few<double, 3> tmpvcm;
-    group->vcm(igroup,masstotal,&tmpvcm[0]);
-    const Few<double, 3> vcm(tmpvcm);
+    double vcm[3];
+    groupKK->vcm_kk<DeviceType>(igroup,masstotal,vcm);
 
     // adjust velocities by vcm to zero linear momentum
     // only adjust a component if flag is set
@@ -133,27 +130,18 @@ void FixMomentumKokkos<DeviceType>::end_of_step()
   }
 
   if (angular) {
-    Few<double, 3> tmpxcm, tmpangmom, tmpomega;
-    double inertia[3][3];
-    /* syncs for each Kokkos-unaware Group method */
-    atomKK->sync(ExecutionSpaceFromDevice<LMPHostType>::space,
-        X_MASK | MASK_MASK | TYPE_MASK | IMAGE_MASK | RMASS_MASK);
-    group->xcm(igroup,masstotal,&tmpxcm[0]);
-    atomKK->sync(ExecutionSpaceFromDevice<LMPHostType>::space,
-        X_MASK | V_MASK | MASK_MASK | TYPE_MASK | IMAGE_MASK | RMASS_MASK);
-    group->angmom(igroup,&tmpxcm[0],&tmpangmom[0]);
-    atomKK->sync(ExecutionSpaceFromDevice<LMPHostType>::space,
-        X_MASK | MASK_MASK | TYPE_MASK | IMAGE_MASK | RMASS_MASK);
-    group->inertia(igroup,&tmpxcm[0],inertia);
-    group->omega(&tmpangmom[0],inertia,&tmpomega[0]);
-    const Few<double, 3> xcm(tmpxcm), angmom(tmpangmom), omega(tmpomega);
+    double xcm[3],angmom[3],omega[3],inertia[3][3];
+    groupKK->xcm_kk<DeviceType>(igroup,masstotal,xcm);
+    groupKK->angmom_kk<DeviceType>(igroup,xcm,angmom);
+    groupKK->inertia_kk<DeviceType>(igroup,xcm,inertia);
+    group->omega(angmom,inertia,omega);
 
     // adjust velocities to zero omega
     // vnew_i = v_i - w x r_i
     // must use unwrapped coords to compute r_i correctly
 
     atomKK->sync(execution_space, X_MASK | IMAGE_MASK);
-    typename AT::t_x_array_randomread x = atomKK->k_x.view<DeviceType>();
+    typename AT::t_kkfloat_1d_3_lr_randomread x = atomKK->k_x.view<DeviceType>();
     typename AT::t_imageint_1d_randomread image = atomKK->k_image.view<DeviceType>();
     int nlocal = atom->nlocal;
 
@@ -167,10 +155,10 @@ void FixMomentumKokkos<DeviceType>::end_of_step()
         x_i[0] = x(i,0);
         x_i[1] = x(i,1);
         x_i[2] = x(i,2);
-        auto unwrap = DomainKokkos::unmap(prd,h,triclinic,x_i,image(i));
-        auto dx = unwrap[0] - xcm[0];
-        auto dy = unwrap[1] - xcm[1];
-        auto dz = unwrap[2] - xcm[2];
+        auto unwrapKK = DomainKokkos::unmap(prd,h,triclinic,x_i,image(i));
+        auto dx = unwrapKK[0] - xcm[0];
+        auto dy = unwrapKK[1] - xcm[1];
+        auto dz = unwrapKK[2] - xcm[2];
         v(i,0) -= omega[1]*dz - omega[2]*dy;
         v(i,1) -= omega[2]*dx - omega[0]*dz;
         v(i,2) -= omega[0]*dy - omega[1]*dx;

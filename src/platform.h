@@ -219,19 +219,6 @@ namespace platform {
 
   bool is_console(FILE *fp);
 
-  /*! Get string with path to the current directory
-   *
-   * \return path to the current directory or empty string */
-
-  std::string current_directory();
-
-  /*! Check if a path is a directory
-   *
-   * \param  path  directory path
-   * \return true if the directory exists */
-
-  bool path_is_directory(const std::string &path);
-
   /*! Get list of entries in a directory
    *
    * This provides a list of strings of the entries in the directory
@@ -376,6 +363,13 @@ namespace platform {
    * \return true if file exists and is readable */
 
   bool file_is_readable(const std::string &path);
+
+  /*! Check if file can be opened for writing
+   *
+   * \param path file path
+   * \return true if file can be opened for writing */
+
+  bool file_is_writable(const std::string &path);
 
   /*! Return free disk space in bytes of file system pointed to by path
    *

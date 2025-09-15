@@ -166,20 +166,23 @@ out your new feature.
 Programming language standards (strict)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The core of LAMMPS is written in C++11 in a style that can be mostly
+The core of LAMMPS is written in C++17 in a style that can be mostly
 described as "C with classes".  Advanced C++ features like operator
 overloading or excessive use of templates are avoided with the intent to
 keep the code readable to programmers that have limited C++ programming
 experience.  C++ constructs are acceptable when they help improve the
 readability and reliability of the code, e.g. when using the
 `std::string` class instead of manipulating pointers and calling the
-string functions of the C library.  In addition, a collection of
+string functions of the C library or when using `auto` to avoid
+redundant data type specifications.  In addition, a collection of
 convenient :doc:`utility functions and classes <Developer_utils>` for
 recurring tasks and a collection of :doc:`platform neutral functions
-<Developer_platform>` for improved portability are provided.
-Contributions with code requiring more recent C++ standards are only
-accepted as packages with the post C++11 standard code confined to the
-package so that it is optional.
+<Developer_platform>` for improved portability are provided.  Containers
+from C++ standard library have to be used with caution, but
+`std::vector` can be useful and is compatible with efficient
+communication via MPI.  Contributions with code requiring more recent
+C++ standards are only accepted as packages with the post C++17 standard
+code confined to the package so that it is optional.
 
 Included Fortran code has to be compatible with the Fortran 2003
 standard.  Since not all platforms supported by LAMMPS provide good
@@ -189,10 +192,8 @@ of the contribution.  As of January 2023, all previously included
 Fortran code for the LAMMPS executable has been replaced by equivalent
 C++ code.
 
-Python code must be compatible with Python 3.5 and later.  Large parts
-of LAMMPS (including the :ref:`PYTHON package <PKG-PYTHON>`) are also
-compatible with Python 2.7.  Compatibility with Python 2.7 is desirable,
-but compatibility with Python 3.5 is **required**.
+Python code currently must be compatible with Python 3.6.  If a later
+version or Python is required, it needs to be documented.
 
 Compatibility with older programming language standards is very
 important to maintain portability and availability of LAMMPS on many
@@ -208,20 +209,21 @@ Build system (strict)
 
 LAMMPS currently supports two build systems: one that is based on
 :doc:`traditional Makefiles <Build_make>` and one that is based on
-:doc:`CMake <Build_cmake>`.  Therefore, your contribution must be
-compatible with and support both build systems.
+:doc:`CMake <Build_cmake>`.  As of fall 2024, it is no longer required
+to support the traditional make build system.  New packages may choose
+to only support building with CMake.  Additions to existing packages
+must follow the requirements set by that package.
 
 For a single pair of header and implementation files that are an
 independent feature, it is usually only required to add them to
 ``src/.gitignore``.
 
 For traditional make, if your contributed files or package depend on
-other LAMMPS style files or packages also being installed
-(e.g. because your file is a derived class from the other LAMMPS
-class), then an ``Install.sh`` file is also needed to check for those
-dependencies and modifications to ``src/Depend.sh`` to trigger the checks.
-See other README and Install.sh files in other directories as
-examples.
+other LAMMPS style files or packages also being installed (e.g. because
+your file is a derived class from the other LAMMPS class), then an
+``Install.sh`` file is also needed to check for those dependencies and
+modifications to ``src/Depend.sh`` to trigger the checks.  See other
+README and Install.sh files in other directories as examples.
 
 Similarly, for CMake support, changes may need to be made to
 ``cmake/CMakeLists.txt``, some of the files in ``cmake/presets``, and

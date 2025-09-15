@@ -79,6 +79,9 @@ void FixSpringSelfKokkos<DeviceType>::init()
 {
   FixSpringSelf::init();
 
+  if (kstyle != CONSTANT)
+    error->all(FLERR, "Fix spring/self/kk does not support variable spring constants (yet)");
+
   if (utils::strmatch(update->integrate_style,"^respa"))
     error->all(FLERR,"Cannot (yet) use respa with Kokkos");
 }
@@ -98,7 +101,7 @@ void FixSpringSelfKokkos<DeviceType>::post_force(int /*vflag*/)
 
   double espring_kk;
 
-  k_xoriginal.modify<LMPHostType>();
+  k_xoriginal.modify_host();
   k_xoriginal.sync<DeviceType>();
 
   copymode = 1;
@@ -120,7 +123,7 @@ void FixSpringSelfKokkos<DeviceType>::post_force(int /*vflag*/)
   auto l_yflag = yflag;
   auto l_zflag = zflag;
 
-  Kokkos::parallel_reduce(nlocal, LAMMPS_LAMBDA(const int& i, double& espring_kk) {
+  Kokkos::parallel_reduce(Kokkos::RangePolicy<DeviceType>(0,nlocal), LAMMPS_LAMBDA(const int& i, double& espring_kk) {
     if (l_mask[i] & l_groupbit) {
       Few<double,3> x_i;
       x_i[0] = l_x(i,0);
@@ -201,7 +204,7 @@ void FixSpringSelfKokkos<DeviceType>::pack_exchange_item(const int &mysend, int 
 
 template<class DeviceType>
 int FixSpringSelfKokkos<DeviceType>::pack_exchange_kokkos(
-   const int &nsend, DAT::tdual_xfloat_2d &k_buf,
+   const int &nsend, DAT::tdual_double_2d_lr &k_buf,
    DAT::tdual_int_1d k_exchange_sendlist, DAT::tdual_int_1d k_copylist,
    ExecutionSpace space)
 {
@@ -210,7 +213,7 @@ int FixSpringSelfKokkos<DeviceType>::pack_exchange_kokkos(
   k_copylist.sync<DeviceType>();
   k_exchange_sendlist.sync<DeviceType>();
 
-  d_buf = typename ArrayTypes<DeviceType>::t_xfloat_1d_um(
+  d_buf = typename AT::t_double_1d_um(
     k_buf.template view<DeviceType>().data(),
     k_buf.extent(0)*k_buf.extent(1));
   d_copylist = k_copylist.view<DeviceType>();
@@ -231,8 +234,8 @@ int FixSpringSelfKokkos<DeviceType>::pack_exchange_kokkos(
 
   k_buf.modify<DeviceType>();
 
-  if (space == Host) k_buf.sync<LMPHostType>();
-  else k_buf.sync<LMPDeviceType>();
+  if (space == Host) k_buf.sync_host();
+  else k_buf.sync_device();
 
   k_xoriginal.template modify<DeviceType>();
 
@@ -264,14 +267,14 @@ void FixSpringSelfKokkos<DeviceType>::operator()(TagFixSpringSelfUnpackExchange,
 
 template <class DeviceType>
 void FixSpringSelfKokkos<DeviceType>::unpack_exchange_kokkos(
-  DAT::tdual_xfloat_2d &k_buf, DAT::tdual_int_1d &k_indices, int nrecv,
+  DAT::tdual_double_2d_lr &k_buf, DAT::tdual_int_1d &k_indices, int nrecv,
   int nrecv1, int nextrarecv1,
   ExecutionSpace /*space*/)
 {
   k_buf.sync<DeviceType>();
   k_indices.sync<DeviceType>();
 
-  d_buf = typename ArrayTypes<DeviceType>::t_xfloat_1d_um(
+  d_buf = typename AT::t_double_1d_um(
     k_buf.template view<DeviceType>().data(),
     k_buf.extent(0)*k_buf.extent(1));
   d_indices = k_indices.view<DeviceType>();

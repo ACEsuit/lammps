@@ -36,6 +36,7 @@
 #include "update.h"
 
 #include <cstring>
+#include <filesystem>
 
 #include "lmprestart.h"
 
@@ -52,7 +53,7 @@ void ReadRestart::command(int narg, char **arg)
   if (narg != 1 && narg != 2) error->all(FLERR,"Illegal read_restart command");
 
   if (domain->box_exist)
-    error->all(FLERR,"Cannot read_restart after simulation box is defined");
+    error->all(FLERR,"Cannot read_restart after simulation box is defined" + utils::errorurl(34));
 
   MPI_Barrier(world);
   double time1 = platform::walltime();
@@ -408,7 +409,7 @@ void ReadRestart::command(int narg, char **arg)
       atom->map_set();
     }
     if (domain->triclinic) domain->x2lamda(atom->nlocal);
-    auto irregular = new Irregular(lmp);
+    auto *irregular = new Irregular(lmp);
     irregular->migrate_atoms(1);
     delete irregular;
     if (domain->triclinic) domain->lamda2x(atom->nlocal);
@@ -419,7 +420,7 @@ void ReadRestart::command(int narg, char **arg)
     if (nextra) {
       memory->destroy(atom->extra);
       memory->create(atom->extra,atom->nmax,nextra,"atom:extra");
-      auto fix = dynamic_cast<FixReadRestart *>(modify->get_fix_by_id("_read_restart"));
+      auto *fix = dynamic_cast<FixReadRestart *>(modify->get_fix_by_id("_read_restart"));
       int *count = fix->count;
       double **extra = fix->extra;
       double **atom_extra = atom->extra;
@@ -441,7 +442,8 @@ void ReadRestart::command(int narg, char **arg)
     utils::logmesg(lmp,"  {} atoms\n",natoms);
 
   if (natoms != atom->natoms)
-    error->all(FLERR,"Did not assign all restart atoms correctly");
+    error->all(FLERR, Error::NOLASTLINE, "Did not assign all restart atoms correctly"
+               +utils::errorurl(16));
 
   if ((atom->molecular == Atom::TEMPLATE) && (me == 0)) {
     std::string mesg;
@@ -534,7 +536,7 @@ std::string ReadRestart::file_search(const std::string &inpfile)
     // convert pattern to equivalent regexp
     pattern.replace(loc,1,"\\d+");
 
-    if (!platform::path_is_directory(dirname))
+    if (!std::filesystem::is_directory(dirname))
       error->one(FLERR,"Cannot open directory {} to search for restart file: {}",dirname);
 
     for (const auto &candidate : platform::list_directory(dirname)) {
@@ -731,7 +733,7 @@ void ReadRestart::header()
     } else if (flag == ATOM_STYLE) {
       char *style = read_string();
       int nargcopy = read_int();
-      auto argcopy = new char*[nargcopy];
+      auto *argcopy = new char*[nargcopy];
       for (int i = 0; i < nargcopy; i++)
         argcopy[i] = read_string();
       atom->create_avec(style,nargcopy,argcopy,1);
@@ -788,6 +790,7 @@ void ReadRestart::header()
     } else if (flag == TRICLINIC_GENERAL) {
       domain->triclinic_general = read_int();
     } else if (flag == ROTATE_G2R) {
+      read_int();
       read_double_vec(9,&domain->rotate_g2r[0][0]);
       MathExtra::transpose3(domain->rotate_g2r,domain->rotate_r2g);
 
@@ -867,7 +870,7 @@ void ReadRestart::type_arrays()
 
     if (flag == MASS) {
       read_int();
-      auto mass = new double[atom->ntypes+1];
+      auto *mass = new double[atom->ntypes+1];
       read_double_vec(atom->ntypes,&mass[1]);
       atom->set_mass(mass);
       delete[] mass;
@@ -982,7 +985,7 @@ void ReadRestart::file_layout()
 void ReadRestart::magic_string()
 {
   int n = strlen(MAGIC_STRING) + 1;
-  auto str = new char[n];
+  auto *str = new char[n];
 
   int count;
   if (me == 0) count = fread(str,sizeof(char),n,fp);
@@ -1024,7 +1027,7 @@ void ReadRestart::check_eof_magic()
   if (revision < 1) return;
 
   int n = strlen(MAGIC_STRING) + 1;
-  auto str = new char[n];
+  auto *str = new char[n];
 
   // read magic string at end of file and restore file pointer
 
@@ -1092,7 +1095,7 @@ char *ReadRestart::read_string()
 {
   int n = read_int();
   if (n < 0) error->all(FLERR,"Illegal size string or corrupt restart");
-  auto value = new char[n];
+  auto *value = new char[n];
   if (me == 0) utils::sfread(FLERR,value,sizeof(char),n,fp,nullptr,error);
   MPI_Bcast(value,n,MPI_CHAR,0,world);
   return value;

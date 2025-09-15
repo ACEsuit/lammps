@@ -125,7 +125,7 @@ void PairGranHookeHistory::compute(int eflag, int vflag)
   if (fix_rigid && neighbor->ago == 0) {
     int tmp;
     int *body = (int *) fix_rigid->extract("body", tmp);
-    auto mass_body = (double *) fix_rigid->extract("masstotal", tmp);
+    auto *mass_body = (double *) fix_rigid->extract("masstotal", tmp);
     if (atom->nmax > nmax) {
       memory->destroy(mass_rigid);
       nmax = atom->nmax;
@@ -407,7 +407,7 @@ void PairGranHookeHistory::settings(int narg, char **arg)
 
 void PairGranHookeHistory::coeff(int narg, char **arg)
 {
-  if (narg > 2) error->all(FLERR, "Incorrect args for pair coefficients");
+  if (narg > 2) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
   if (!allocated) allocate();
 
   int ilo, ihi, jlo, jhi;
@@ -422,7 +422,7 @@ void PairGranHookeHistory::coeff(int narg, char **arg)
     }
   }
 
-  if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients");
+  if (count == 0) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
 }
 
 /* ----------------------------------------------------------------------
@@ -806,24 +806,4 @@ double PairGranHookeHistory::memory_usage()
 {
   double bytes = (double) nmax * sizeof(double);
   return bytes;
-}
-
-/* ----------------------------------------------------------------------
-   self-interaction range of particle
-------------------------------------------------------------------------- */
-
-double PairGranHookeHistory::atom2cut(int i)
-{
-  double cut = atom->radius[i] * 2;
-  return cut;
-}
-
-/* ----------------------------------------------------------------------
-   maximum interaction range for two finite particles
-------------------------------------------------------------------------- */
-
-double PairGranHookeHistory::radii2cut(double r1, double r2)
-{
-  double cut = r1 + r2;
-  return cut;
 }

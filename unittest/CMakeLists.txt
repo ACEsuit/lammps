@@ -10,8 +10,8 @@ if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_CXX_COMPILER_VERSION VERSIO
 endif()
 
 message(STATUS "Downloading and building googletest framework")
-set(GTEST_URL "https://github.com/google/googletest/archive/release-1.12.1.tar.gz" CACHE STRING "URL of googletest source")
-set(GTEST_MD5 "e82199374acdfda3f425331028eb4e2a" CACHE STRING "MD5 sum for googletest source")
+set(GTEST_URL "https://github.com/google/googletest/releases/download/v1.17.0/googletest-1.17.0.tar.gz" CACHE STRING "URL of googletest source")
+set(GTEST_MD5 "b6f100bc2a5853a48046aa168ececf84" CACHE STRING "MD5 sum for googletest source")
 mark_as_advanced(GTEST_URL)
 mark_as_advanced(GTEST_MD5)
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -33,10 +33,6 @@ mark_as_advanced(SKIP_DEATH_TESTS)
 if(SKIP_DEATH_TESTS)
   add_compile_definitions(LAMMPS_SKIP_DEATH_TESTS)
 endif()
-# import
-foreach(_FLAG ${CMAKE_TUNE_FLAGS})
-  add_compile_options(${_FLAG})
-endforeach()
 
 # must repeat handling coverage for older CMake
 if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND ENABLE_COVERAGE)

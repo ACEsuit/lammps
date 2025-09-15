@@ -38,7 +38,7 @@ enum { TYPE, RADIUS };
 ComputePairLocal::ComputePairLocal(LAMMPS *lmp, int narg, char **arg) :
     Compute(lmp, narg, arg), pstyle(nullptr), pindex(nullptr), vlocal(nullptr), alocal(nullptr)
 {
-  if (narg < 4) error->all(FLERR, "Illegal compute pair/local command");
+  if (narg < 4) utils::missing_cmd_args(FLERR, "compute pair/local", error);
 
   local_flag = 1;
   nvalues = narg - 3;
@@ -97,7 +97,7 @@ ComputePairLocal::ComputePairLocal(LAMMPS *lmp, int narg, char **arg) :
   // error check
 
   if (cutstyle == RADIUS && !atom->radius_flag)
-    error->all(FLERR, "This compute pair/local requires atom attribute radius");
+    error->all(FLERR, "Compute pair/local with ID {} requires atom attribute radius", id);
 
   // set singleflag if need to call pair->single()
 
@@ -143,7 +143,7 @@ void ComputePairLocal::init()
   // this should enable it to always be a copy list (e.g. for granular pstyle)
 
   int neighflags = NeighConst::REQ_OCCASIONAL;
-  auto pairrequest = neighbor->find_request(force->pair);
+  auto *pairrequest = neighbor->find_request(force->pair);
   if (pairrequest && pairrequest->get_size()) neighflags |= NeighConst::REQ_SIZE;
   neighbor->add_request(this, neighflags);
 }
@@ -277,22 +277,19 @@ int ComputePairLocal::compute_pairs(int flag)
         else
           ptr = alocal[m];
 
-        // to make sure dx, dy and dz are always from the lower to the higher id
-        double directionCorrection = itag > jtag ? -1.0 : 1.0;
-
         for (n = 0; n < nvalues; n++) {
           switch (pstyle[n]) {
             case DIST:
               ptr[n] = sqrt(rsq);
               break;
             case DX:
-              ptr[n] = delx * directionCorrection;
+              ptr[n] = delx;
               break;
             case DY:
-              ptr[n] = dely * directionCorrection;
+              ptr[n] = dely;
               break;
             case DZ:
-              ptr[n] = delz * directionCorrection;
+              ptr[n] = delz;
               break;
             case ENG:
               ptr[n] = eng;

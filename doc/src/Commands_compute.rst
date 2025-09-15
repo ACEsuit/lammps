@@ -30,6 +30,7 @@ KOKKOS, o = OPENMP, t = OPT.
    * :doc:`cnp/atom <compute_cnp_atom>`
    * :doc:`com <compute_com>`
    * :doc:`com/chunk <compute_com_chunk>`
+   * :doc:`composition/atom (k) <compute_composition_atom>`
    * :doc:`contact/atom <compute_contact_atom>`
    * :doc:`coord/atom (k) <compute_coord_atom>`
    * :doc:`count/type <compute_count_type>`
@@ -58,6 +59,7 @@ KOKKOS, o = OPENMP, t = OPT.
    * :doc:`fep/ta <compute_fep_ta>`
    * :doc:`force/tally <compute_tally>`
    * :doc:`fragment/atom <compute_cluster_atom>`
+   * :doc:`gaussian/grid/local (k) <compute_gaussian_grid_local>`
    * :doc:`global/atom <compute_global_atom>`
    * :doc:`group/group <compute_group_group>`
    * :doc:`gyration <compute_gyration>`
@@ -77,7 +79,6 @@ KOKKOS, o = OPENMP, t = OPT.
    * :doc:`ke/atom/eff <compute_ke_atom_eff>`
    * :doc:`ke/eff <compute_ke_eff>`
    * :doc:`ke/rigid <compute_ke_rigid>`
-   * :doc:`composition/atom (k) <compute_composition_atom>`
    * :doc:`mliap <compute_mliap>`
    * :doc:`momentum <compute_momentum>`
    * :doc:`msd <compute_msd>`
@@ -140,8 +141,8 @@ KOKKOS, o = OPENMP, t = OPT.
    * :doc:`smd/vol <compute_smd_vol>`
    * :doc:`snap <compute_sna_atom>`
    * :doc:`sna/atom <compute_sna_atom>`
-   * :doc:`sna/grid <compute_sna_atom>`
-   * :doc:`sna/grid/local <compute_sna_atom>`
+   * :doc:`sna/grid (k) <compute_sna_atom>`
+   * :doc:`sna/grid/local (k) <compute_sna_atom>`
    * :doc:`snad/atom <compute_sna_atom>`
    * :doc:`snav/atom <compute_sna_atom>`
    * :doc:`sph/e/atom <compute_sph_e_atom>`
@@ -177,6 +178,7 @@ KOKKOS, o = OPENMP, t = OPT.
    * :doc:`ti <compute_ti>`
    * :doc:`torque/chunk <compute_torque_chunk>`
    * :doc:`vacf <compute_vacf>`
+   * :doc:`vacf/chunk <compute_vacf_chunk>`
    * :doc:`vcm/chunk <compute_vcm_chunk>`
    * :doc:`viscosity/cos <compute_viscosity_cos>`
    * :doc:`voronoi/atom <compute_voronoi_atom>`

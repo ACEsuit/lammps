@@ -48,7 +48,7 @@ AngleHybrid::~AngleHybrid()
     delete[] keywords;
   }
 
-  deallocate();
+  AngleHybrid::deallocate();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -318,6 +318,14 @@ void AngleHybrid::init_style()
 
   for (int m = 0; m < nstyles; m++)
     if (styles[m]) styles[m]->init_style();
+}
+
+/* ---------------------------------------------------------------------- */
+
+int AngleHybrid::check_itype(int itype, char *substyle)
+{
+  if (strcmp(keywords[map[itype]], substyle) == 0) return 1;
+  return 0;
 }
 
 /* ----------------------------------------------------------------------

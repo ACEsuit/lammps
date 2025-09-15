@@ -97,7 +97,7 @@ template<int RMASS>
 KOKKOS_INLINE_FUNCTION
 void ComputeTempDeformKokkos<DeviceType>::operator()(TagComputeTempDeformScalar<RMASS>, const int &i, CTEMP& t_kk) const {
 
-  double vstream[3],vthermal[3];
+  KK_FLOAT vstream[3],vthermal[3];
 
   vstream[0] = h_rate[0]*x(i,0) + h_rate[5]*x(i,1) + h_rate[4]*x(i,2) + h_ratelo[0];
   vstream[1] = h_rate[1]*x(i,1) + h_rate[3]*x(i,2) + h_ratelo[1];
@@ -167,7 +167,7 @@ template<int RMASS>
 KOKKOS_INLINE_FUNCTION
 void ComputeTempDeformKokkos<DeviceType>::operator()(TagComputeTempDeformVector<RMASS>, const int &i, CTEMP& t_kk) const {
 
-  double vstream[3],vthermal[3];
+  KK_FLOAT vstream[3],vthermal[3];
 
   vstream[0] = h_rate[0]*x(i,0) + h_rate[5]*x(i,1) + h_rate[4]*x(i,2) + h_ratelo[0];
   vstream[1] = h_rate[1]*x(i,1) + h_rate[3]*x(i,2) + h_ratelo[1];
@@ -177,7 +177,7 @@ void ComputeTempDeformKokkos<DeviceType>::operator()(TagComputeTempDeformVector<
   vthermal[2] = v(i,2) - vstream[2];
 
   if (mask[i] & groupbit) {
-    F_FLOAT massone = 0.0;
+    KK_FLOAT massone = 0.0;
     if (RMASS) massone = rmass[i];
     else massone = mass[type[i]];
     t_kk.t0 += massone * vthermal[0]*vthermal[0];
@@ -190,10 +190,20 @@ void ComputeTempDeformKokkos<DeviceType>::operator()(TagComputeTempDeformVector<
 }
 
 /* ---------------------------------------------------------------------- */
+
 template<class DeviceType>
 void ComputeTempDeformKokkos<DeviceType>::remove_bias_all()
 {
-  atomKK->sync(execution_space,datamask_read);
+  remove_bias_all_kk();
+  atomKK->sync(Host,V_MASK);
+}
+
+/* ---------------------------------------------------------------------- */
+
+template<class DeviceType>
+void ComputeTempDeformKokkos<DeviceType>::remove_bias_all_kk()
+{
+  atomKK->sync(execution_space,X_MASK|V_MASK);
   v = atomKK->k_v.view<DeviceType>();
   x = atomKK->k_x.view<DeviceType>();
   mask = atomKK->k_mask.view<DeviceType>();
@@ -201,7 +211,7 @@ void ComputeTempDeformKokkos<DeviceType>::remove_bias_all()
 
   if (atom->nmax > maxbias) {
     maxbias = atom->nmax;
-    vbiasall = typename ArrayTypes<DeviceType>::t_v_array("temp/deform/kk:vbiasall", maxbias);
+    vbiasall = typename AT::t_kkfloat_1d_3("temp/deform/kk:vbiasall", maxbias);
   }
 
   domainKK->x2lamda(nlocal);
@@ -214,6 +224,8 @@ void ComputeTempDeformKokkos<DeviceType>::remove_bias_all()
   copymode = 0;
 
   domainKK->lamda2x(nlocal);
+
+  atomKK->modified(execution_space,V_MASK);
 }
 
 template<class DeviceType>
@@ -230,18 +242,20 @@ void ComputeTempDeformKokkos<DeviceType>::operator()(TagComputeTempDeformRemoveB
 }
 
 /* ---------------------------------------------------------------------- */
+
 template<class DeviceType>
 void ComputeTempDeformKokkos<DeviceType>::restore_bias_all()
 {
-  atomKK->sync(execution_space,datamask_read);
+  atomKK->sync(execution_space,V_MASK);
   v = atomKK->k_v.view<DeviceType>();
-  x = atomKK->k_x.view<DeviceType>();
   mask = atomKK->k_mask.view<DeviceType>();
   int nlocal = atom->nlocal;
 
   copymode = 1;
   Kokkos::parallel_for(Kokkos::RangePolicy<DeviceType, TagComputeTempDeformRestoreBias >(0,nlocal),*this);
   copymode = 0;
+
+  atomKK->modified(execution_space,V_MASK);
 }
 
 template<class DeviceType>

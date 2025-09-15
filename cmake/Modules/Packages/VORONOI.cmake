@@ -34,7 +34,7 @@ if(DOWNLOAD_VORO)
   ExternalProject_Add(voro_build
     URL     ${VORO_URL}
     URL_MD5 ${VORO_MD5}
-    PATCH_COMMAND patch -b -p0 < ${LAMMPS_LIB_SOURCE_DIR}/voronoi/voro-make.patch
+    PATCH_COMMAND patch -b -p0 < ${LAMMPS_DIR}/cmake/patches/voro-make.patch
     CONFIGURE_COMMAND ""
     BUILD_COMMAND make ${VORO_BUILD_OPTIONS}
     BUILD_IN_SOURCE 1
@@ -54,5 +54,5 @@ else()
   if(NOT VORO_FOUND)
     message(FATAL_ERROR "Voro++ library not found. Help CMake to find it by setting VORO_LIBRARY and VORO_INCLUDE_DIR, or set DOWNLOAD_VORO=ON to download it")
   endif()
-  target_link_libraries(lammps PRIVATE VORO::VORO)
+  target_link_libraries(lammps PRIVATE VORO::voro++)
 endif()

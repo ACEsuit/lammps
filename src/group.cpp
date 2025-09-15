@@ -34,7 +34,7 @@
 
 #include <cmath>
 #include <cstring>
-#include <map>
+#include <set>
 #include <utility>
 
 using namespace LAMMPS_NS;
@@ -92,7 +92,7 @@ void Group::assign(int narg, char **arg)
 {
   int i;
 
-  if (domain->box_exist == 0) error->all(FLERR, "Group command before simulation box is defined");
+  if (domain->box_exist == 0) error->all(FLERR, "Group command before simulation box is defined" + utils::errorurl(33));
   if (narg < 2) utils::missing_cmd_args(FLERR, "group", error);
 
   // delete the group if not being used elsewhere
@@ -172,7 +172,7 @@ void Group::assign(int narg, char **arg)
 
       if (narg != 3) error->all(FLERR, "Illegal group region command");
 
-      auto region = domain->get_region_by_id(arg[2]);
+      auto *region = domain->get_region_by_id(arg[2]);
       if (!region) error->all(FLERR, "Region {} for group region does not exist", arg[2]);
       region->init();
       region->prematch();
@@ -650,6 +650,19 @@ int Group::find_unused()
 }
 
 /* ----------------------------------------------------------------------
+   return group bitmask for given group id. Error out if group is not found.
+------------------------------------------------------------------------- */
+
+int Group::get_bitmask_by_id(const std::string &file, int line, const std::string &name,
+                             const std::string &caller)
+{
+  int igroup = find(name);
+  if (igroup < 0)
+    error->all(file, line, "Group ID {} requested by {} does not exist", name, caller);
+  return bitmask[igroup];
+}
+
+/* ----------------------------------------------------------------------
    add atoms to group that are in same molecules as atoms already in group
    do not include molID = 0
 ------------------------------------------------------------------------- */
@@ -658,7 +671,7 @@ void Group::add_molecules(int /*igroup*/, int bit)
 {
   // hash = unique molecule IDs of atoms already in group
 
-  hash = new std::map<tagint, int>();
+  std::set<tagint> hash;
 
   tagint *molecule = atom->molecule;
   int *mask = atom->mask;
@@ -666,25 +679,22 @@ void Group::add_molecules(int /*igroup*/, int bit)
 
   for (int i = 0; i < nlocal; i++)
     if (mask[i] & bit) {
-      if (molecule[i] == 0) continue;
-      if (hash->find(molecule[i]) == hash->end()) (*hash)[molecule[i]] = 1;
+      if (molecule[i] != 0) hash.insert(molecule[i]);
     }
 
   // list = set of unique molecule IDs for atoms to add
   // pass list to all other procs via comm->ring()
 
-  int n = hash->size();
+  auto n = hash.size();
   tagint *list;
   memory->create(list, n, "group:list");
 
   n = 0;
-  std::map<tagint, int>::iterator pos;
-  for (pos = hash->begin(); pos != hash->end(); ++pos) list[n++] = pos->first;
+  for(const auto pos : hash) list[n++] = pos;
 
   molbit = bit;
   comm->ring(n, sizeof(tagint), list, 1, molring, nullptr, (void *) this);
 
-  delete hash;
   memory->destroy(list);
 }
 
@@ -697,19 +707,17 @@ void Group::add_molecules(int /*igroup*/, int bit)
 
 void Group::molring(int n, char *cbuf, void *ptr)
 {
-  auto gptr = (Group *) ptr;
-  auto list = (tagint *) cbuf;
-  std::map<tagint, int> *hash = gptr->hash;
+  auto *gptr = (Group *) ptr;
+  auto *list = (tagint *) cbuf;
   int nlocal = gptr->atom->nlocal;
   tagint *molecule = gptr->atom->molecule;
   int *mask = gptr->atom->mask;
   int molbit = gptr->molbit;
 
-  hash->clear();
-  for (int i = 0; i < n; i++) (*hash)[list[i]] = 1;
+  std::set<tagint> hash(list, list + n);
 
   for (int i = 0; i < nlocal; i++)
-    if (hash->find(molecule[i]) != hash->end()) mask[i] |= molbit;
+    if (hash.find(molecule[i]) != hash.end()) mask[i] |= molbit;
 }
 
 /* ----------------------------------------------------------------------
@@ -1141,10 +1149,10 @@ void Group::xcm(int igroup, double masstotal, double *cm, Region *region)
 /* ----------------------------------------------------------------------
    compute the center-of-mass velocity of group of atoms
    masstotal = total mass
-   return center-of-mass velocity in cm[]
+   return center-of-mass velocity in vcm[]
 ------------------------------------------------------------------------- */
 
-void Group::vcm(int igroup, double masstotal, double *cm)
+void Group::vcm(int igroup, double masstotal, double *vcm)
 {
   int groupbit = bitmask[igroup];
 
@@ -1176,21 +1184,21 @@ void Group::vcm(int igroup, double masstotal, double *cm)
       }
   }
 
-  MPI_Allreduce(p, cm, 3, MPI_DOUBLE, MPI_SUM, world);
+  MPI_Allreduce(p, vcm, 3, MPI_DOUBLE, MPI_SUM, world);
   if (masstotal > 0.0) {
-    cm[0] /= masstotal;
-    cm[1] /= masstotal;
-    cm[2] /= masstotal;
+    vcm[0] /= masstotal;
+    vcm[1] /= masstotal;
+    vcm[2] /= masstotal;
   }
 }
 
 /* ----------------------------------------------------------------------
    compute the center-of-mass velocity of group of atoms in region
    masstotal = total mass
-   return center-of-mass velocity in cm[]
+   return center-of-mass velocity in vcm[]
 ------------------------------------------------------------------------- */
 
-void Group::vcm(int igroup, double masstotal, double *cm, Region *region)
+void Group::vcm(int igroup, double masstotal, double *vcm, Region *region)
 {
   int groupbit = bitmask[igroup];
   region->prematch();
@@ -1224,11 +1232,11 @@ void Group::vcm(int igroup, double masstotal, double *cm, Region *region)
       }
   }
 
-  MPI_Allreduce(p, cm, 3, MPI_DOUBLE, MPI_SUM, world);
+  MPI_Allreduce(p, vcm, 3, MPI_DOUBLE, MPI_SUM, world);
   if (masstotal > 0.0) {
-    cm[0] /= masstotal;
-    cm[1] /= masstotal;
-    cm[2] /= masstotal;
+    vcm[0] /= masstotal;
+    vcm[1] /= masstotal;
+    vcm[2] /= masstotal;
   }
 }
 
@@ -1236,7 +1244,7 @@ void Group::vcm(int igroup, double masstotal, double *cm, Region *region)
    compute the total force on group of atoms
 ------------------------------------------------------------------------- */
 
-void Group::fcm(int igroup, double *cm)
+void Group::fcm(int igroup, double *fcm)
 {
   int groupbit = bitmask[igroup];
 
@@ -1254,14 +1262,14 @@ void Group::fcm(int igroup, double *cm)
       flocal[2] += f[i][2];
     }
 
-  MPI_Allreduce(flocal, cm, 3, MPI_DOUBLE, MPI_SUM, world);
+  MPI_Allreduce(flocal, fcm, 3, MPI_DOUBLE, MPI_SUM, world);
 }
 
 /* ----------------------------------------------------------------------
    compute the total force on group of atoms in region
 ------------------------------------------------------------------------- */
 
-void Group::fcm(int igroup, double *cm, Region *region)
+void Group::fcm(int igroup, double *fcm, Region *region)
 {
   int groupbit = bitmask[igroup];
   region->prematch();
@@ -1281,7 +1289,7 @@ void Group::fcm(int igroup, double *cm, Region *region)
       flocal[2] += f[i][2];
     }
 
-  MPI_Allreduce(flocal, cm, 3, MPI_DOUBLE, MPI_SUM, world);
+  MPI_Allreduce(flocal, fcm, 3, MPI_DOUBLE, MPI_SUM, world);
 }
 
 /* ----------------------------------------------------------------------

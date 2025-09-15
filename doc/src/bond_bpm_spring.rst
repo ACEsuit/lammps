@@ -10,7 +10,7 @@ Syntax
 
    bond_style bpm/spring keyword value attribute1 attribute2 ...
 
-* optional keyword = *overlay/pair* or *store/local* or *smooth* or *break*
+* optional keyword = *overlay/pair* or *store/local* or *smooth* or *normalize* or *break* or *volume/factor*
 
   .. parsed-literal::
 
@@ -36,6 +36,9 @@ Syntax
        *break* value = *yes* or *no*
           indicates whether bonds break during a run
 
+       *volume/factor* value = *yes* or *no*
+          indicates whether forces include the volumetric contribution
+
 Examples
 """"""""
 
@@ -43,6 +46,9 @@ Examples
 
    bond_style bpm/spring
    bond_coeff 1 1.0 0.05 0.1
+
+   bond_style bpm/spring volume/factor yes
+   bond_coeff 1 1.0 0.05 0.1 0.5
 
    bond_style bpm/spring myfix 1000 time id1 id2
    dump 1 all local 1000 dump.broken f_myfix[1] f_myfix[2] f_myfix[3]
@@ -97,31 +103,63 @@ approach the critical strain
 
    w = 1.0 - \left( \frac{r - r_0}{r_0 \epsilon_c} \right)^8 .
 
+If the *normalize* keyword is set to *yes*, the elastic bond force will be
+normalized by :math:`r_0` such that :math:`k` must be given in force units.
+
+By default, pair forces are not calculated between bonded particles.
+Pair forces can alternatively be overlaid on top of bond forces by setting
+the *overlay/pair* keyword to *yes*. This keyword is only necessary if
+bonds can break and requires specific :doc:`special_bonds <special_bonds>`
+settings described in the restrictions.  Further details can be found in
+the :doc:`how to <Howto_bpm>` page on BPMs.
+
+.. versionadded:: 28Mar2023
+
+If the *break* keyword is set to *no*, LAMMPS assumes bonds should not break
+during a simulation run. This will prevent some unnecessary calculation.
+The recommended bond communication distance no longer depends on the value of
+:math:`\epsilon_c` (which is ignored) but instead corresponds to the typical
+heuristic maximum strain used by typical non-bpm bond styles. Similar behavior
+to *break no* can also be attained by setting an arbitrarily high value of
+:math:`\epsilon_c`. One cannot use *break no* with *smooth yes*.
+
+.. versionadded:: 4Feb2025
+
+The *volume/factor* keyword toggles whether an additional multibody
+contribution is added to he force using the formulation in
+:ref:`(Clemmer2) <multibody-Clemmer>`,
+
+.. math::
+
+   \alpha_v \left(\left[\frac{V_i + V_j}{V_{0,i} + V_{0,j}}\right]^{1/3} - \frac{r_{ij}}{r_{0,ij}}\right)
+
+where :math:`\alpha_v` is a user specified coefficient and :math:`V_i`
+and :math:`V_{0,i}` are estimates of the current and local volume
+of atom :math:`i`. These volumes are calculated as the sum of current
+or initial bond lengths cubed. In 2D, the volume is replaced with an area
+calculated using bond lengths squared and the cube root in the above equation
+is accordingly replaced with a square root. This approximation assumes bonds
+are evenly distributed on a spherical surface and neglects constant prefactors
+which are irrelevant since only the ratio of volumes matters. This term may be
+used to adjust the Poisson's ratio. See the simulation in the
+``examples/bpm/poissons_ratio`` directory for a demonstration of this effect.
+
+If a bond is broken (or created), :math:`V_{0,i}` is updated by subtracting
+(or adding) that bond's contribution.
+
 The following coefficients must be defined for each bond type via the
 :doc:`bond_coeff <bond_coeff>` command as in the example above, or in
 the data file or restart files read by the :doc:`read_data
 <read_data>` or :doc:`read_restart <read_restart>` commands:
 
 * :math:`k`             (force/distance units)
-* :math:`\epsilon_c`    (unit less)
+* :math:`\epsilon_c`    (unitless)
 * :math:`\gamma`        (force/velocity units)
 
-If the *normalize* keyword is set to *yes*, the elastic bond force will be
-normalized by :math:`r_0` such that :math:`k` must be given in force units.
+Additionally, if *volume/factor* is set to *yes*, a fourth coefficient
+must be provided:
 
-By default, pair forces are not calculated between bonded particles.
-Pair forces can alternatively be overlaid on top of bond forces by setting
-the *overlay/pair* keyword to *yes*. These settings require specific
-:doc:`special_bonds <special_bonds>` settings described in the
-restrictions.  Further details can be found in the :doc:`how to <Howto_bpm>`
-page on BPMs.
-
-.. versionadded:: 28Mar2023
-
-If the *break* keyword is set to *no*, LAMMPS assumes bonds should not break
-during a simulation run. This will prevent some unnecessary calculation.
-However, if a bond reaches a strain greater than :math:`\epsilon_c`,
-it will trigger an error.
+* :math:`a_v`           (force units)
 
 If the *store/local* keyword is used, an internal fix will track bonds that
 break during the simulation. Whenever a bond breaks, data is processed
@@ -177,11 +215,14 @@ for an overview of LAMMPS output options.
 The vector or array will be floating point values that correspond to
 the specified attribute.
 
-The single() function of this bond style returns 0.0 for the energy
-of a bonded interaction, since energy is not conserved in these
-dissipative potentials.  The single() function also calculates an
-extra bond quantity, the initial distance :math:`r_0`. This
-extra quantity can be accessed by the
+Any settings with the *store/local* option are not saved to a restart
+file and must be redefined.
+
+The potential energy and the single() function of this bond style return
+:math:`k (r - r_0)^2 / 2` as a proxy of the energy of a bonded interaction,
+ignoring any volumetric/smoothing factors or dissipative forces.  The single()
+function also calculates an extra bond quantity, the initial distance
+:math:`r_0`. This extra quantity can be accessed by the
 :doc:`compute bond/local <compute_bond_local>` command as *b1*\ .
 
 Restrictions
@@ -191,19 +232,24 @@ This bond style is part of the BPM package.  It is only enabled if
 LAMMPS was built with that package.  See the :doc:`Build package
 <Build_package>` page for more info.
 
-By default if pair interactions between bonded atoms are to be disabled,
-this bond style requires setting
+To handle breaking bonds, BPM bond styles have extra requirements for
+special bonds. If bonds cannot break (*break no*), then one can use any
+special bond weights. Otherwise, restrictions depend on whether pair
+forces are overlaid (*pair/overlay yes*). If so, then all weights must
+be one:
+
+.. code-block:: LAMMPS
+
+   special_bonds lj/coul 1 1 1
+
+If pair forces are disabled (*pair/overlay no*), the default, then the
+weights must be
 
 .. code-block:: LAMMPS
 
    special_bonds lj 0 1 1 coul 1 1 1
 
-and :doc:`newton <newton>` must be set to bond off.  If the *overlay/pair*
-keyword is set to *yes*, this bond style alternatively requires setting
-
-.. code-block:: LAMMPS
-
-   special_bonds lj/coul 1 1 1
+and :doc:`newton <newton>` must be set to bond off.
 
 Related commands
 """"""""""""""""
@@ -213,7 +259,7 @@ Related commands
 Default
 """""""
 
-The option defaults are *overlay/pair* = *no*, *smooth* = *yes*, *normalize* = *no*, and *break* = *yes*
+The option defaults are *overlay/pair* = *no*, *smooth* = *yes*, *normalize* = *no*, *break* = *yes*, and *volume/factor* = *no*
 
 ----------
 
@@ -224,3 +270,7 @@ The option defaults are *overlay/pair* = *no*, *smooth* = *yes*, *normalize* = *
 .. _Groot4:
 
 **(Groot)** Groot and Warren, J Chem Phys, 107, 4423-35 (1997).
+
+.. _multibody-Clemmer:
+
+**(Clemmer2)** Clemmer, Monti, Lechman, Soft Matter, 20, 1702 (2024).

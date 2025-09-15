@@ -49,11 +49,6 @@ using namespace LAMMPS_NS;
      in 2d is all bins in y-plane of self and above, but not below
      stencil includes self
      no versions that allow ghost on (no callers need it?)
-   for multi/old:
-     create one stencil for each atom type
-     stencil follows same rules for half/full, newton on/off, triclinic
-     cutoff is not cutneighmaxsq, but max cutoff for that atom type
-     no versions that allow ghost on (any need for it?)
    for multi:
      create one stencil for each icollection-jcollection pairing
      the full/half stencil label refers to the same-collection stencil
@@ -71,12 +66,9 @@ NStencil::NStencil(LAMMPS *lmp) : Pointers(lmp)
   last_stencil = -1;
 
   xyzflag = 0;
-  maxstencil = maxstencil_multi_old = 0;
+  maxstencil  = 0;
   stencil = nullptr;
   stencilxyz = nullptr;
-  nstencil_multi_old = nullptr;
-  stencil_multi_old = nullptr;
-  distsq_multi_old = nullptr;
 
   nstencil_multi = nullptr;
   stencil_multi = nullptr;
@@ -98,18 +90,6 @@ NStencil::~NStencil()
 {
   memory->destroy(stencil);
   memory->destroy(stencilxyz);
-
-  if (stencil_multi_old) {
-
-    int n = atom->ntypes;
-    for (int i = 1; i <= n; i++) {
-      memory->destroy(stencil_multi_old[i]);
-      memory->destroy(distsq_multi_old[i]);
-    }
-    delete [] nstencil_multi_old;
-    delete [] stencil_multi_old;
-    delete [] distsq_multi_old;
-  }
 
   if (maxstencil_multi) {
 
@@ -223,52 +203,27 @@ void NStencil::create_setup()
     // smax = max possible size of entire 3d stencil
     // stencil will be empty if cutneighmax = 0.0
 
-    sx = static_cast<int>(cutneighmax*bininvx);
-    if (sx*binsizex < cutneighmax) sx++;
-    sy = static_cast<int>(cutneighmax*bininvy);
-    if (sy*binsizey < cutneighmax) sy++;
-    sz = static_cast<int>(cutneighmax*bininvz);
-    if (sz*binsizez < cutneighmax) sz++;
+    sx = static_cast<int>(cutneighmax * bininvx);
+    if (sx * binsizex < cutneighmax) sx++;
+    sy = static_cast<int>(cutneighmax * bininvy);
+    if (sy * binsizey < cutneighmax) sy++;
+    sz = static_cast<int>(cutneighmax * bininvz);
+    if (sz * binsizez < cutneighmax) sz++;
     if (dimension == 2) sz = 0;
 
-    int smax = (2*sx+1) * (2*sy+1) * (2*sz+1);
+    int smax = (2 * sx + 1) * (2 * sy + 1) * (2 * sz + 1);
 
     // reallocate stencil structs if necessary
-    // for BIN and MULTI_OLD styles
+    // for BIN styles
 
     if (neighstyle == Neighbor::BIN) {
       if (smax > maxstencil) {
         maxstencil = smax;
         memory->destroy(stencil);
-        memory->create(stencil,maxstencil,"neighstencil:stencil");
+        memory->create(stencil, maxstencil, "neighstencil:stencil");
         if (xyzflag) {
           memory->destroy(stencilxyz);
-          memory->create(stencilxyz,maxstencil,3,"neighstencil:stencilxyz");
-        }
-      }
-
-    } else {
-      int i;
-      int n = atom->ntypes;
-      if (maxstencil_multi_old == 0) {
-        nstencil_multi_old = new int[n+1];
-        stencil_multi_old = new int*[n+1];
-        distsq_multi_old = new double*[n+1];
-        for (i = 1; i <= n; i++) {
-          nstencil_multi_old[i] = 0;
-          stencil_multi_old[i] = nullptr;
-          distsq_multi_old[i] = nullptr;
-        }
-      }
-      if (smax > maxstencil_multi_old) {
-        maxstencil_multi_old = smax;
-        for (i = 1; i <= n; i++) {
-          memory->destroy(stencil_multi_old[i]);
-          memory->destroy(distsq_multi_old[i]);
-          memory->create(stencil_multi_old[i],maxstencil_multi_old,
-                         "neighstencil:stencil_multi_old");
-          memory->create(distsq_multi_old[i],maxstencil_multi_old,
-                         "neighstencil:distsq_multi_old");
+          memory->create(stencilxyz, maxstencil, 3, "neighstencil:stencilxyz");
         }
       }
     }
@@ -280,7 +235,7 @@ void NStencil::create_setup()
     if (nb) copy_bin_info_multi();
 
     // Deallocate arrays if previously allocated
-    if((n > maxcollections) && stencil_multi){
+    if ((n > maxcollections) && stencil_multi){
       memory->destroy(nstencil_multi);
       for (i = 0; i < maxcollections; i++) {
         for (j = 0; j < maxcollections; j++)
@@ -339,10 +294,10 @@ void NStencil::create_setup()
       memory->create(maxstencil_multi, n, n, "neighstencil::maxstencil_multi");
       memory->create(nstencil_multi, n, n, "neighstencil::nstencil_multi");
       stencil_multi = new int**[n]();
-      for (i = 0; i < n; ++i) {
+      for (i = 0; i < n; i++) {
         stencil_multi[i] = new int*[n]();
-        for (j = 0; j < n; ++j) {
-              maxstencil_multi[i][j] = 0;
+        for (j = 0; j < n; j++) {
+          maxstencil_multi[i][j] = 0;
           nstencil_multi[i][j] = 0;
           stencil_multi[i][j] = nullptr;
         }
@@ -378,23 +333,23 @@ void NStencil::create_setup()
 
         stencil_range = sqrt(cutcollectionsq[i][j]);
 
-        sx = static_cast<int> (stencil_range*bininvx_multi[bin_collection]);
-        if (sx*binsizex_multi[bin_collection] < stencil_range) sx++;
-        sy = static_cast<int> (stencil_range*bininvy_multi[bin_collection]);
-        if (sy*binsizey_multi[bin_collection] < stencil_range) sy++;
-        sz = static_cast<int> (stencil_range*bininvz_multi[bin_collection]);
-        if (sz*binsizez_multi[bin_collection] < stencil_range) sz++;
+        sx = static_cast<int> (stencil_range * bininvx_multi[bin_collection]);
+        if (sx * binsizex_multi[bin_collection] < stencil_range) sx++;
+        sy = static_cast<int> (stencil_range * bininvy_multi[bin_collection]);
+        if (sy * binsizey_multi[bin_collection] < stencil_range) sy++;
+        sz = static_cast<int> (stencil_range * bininvz_multi[bin_collection]);
+        if (sz * binsizez_multi[bin_collection] < stencil_range) sz++;
         if (dimension == 2) sz = 0;
 
         stencil_sx_multi[i][j] = sx;
         stencil_sy_multi[i][j] = sy;
         stencil_sz_multi[i][j] = sz;
 
-        smax = ((2*sx+1) * (2*sy+1) * (2*sz+1));
+        smax = ((2 * sx + 1) * (2 * sy + 1) * (2 * sz + 1));
 
         if (smax > maxstencil_multi[i][j]) {
           maxstencil_multi[i][j] = smax;
-          if(stencil_multi[i][j])
+          if (stencil_multi[i][j])
             memory->destroy(stencil_multi[i][j]);
           memory->create(stencil_multi[i][j], smax,
                                  "neighstencil::stencil_multi");
@@ -457,16 +412,17 @@ double NStencil::memory_usage()
 {
   double bytes = 0;
   if (neighstyle == Neighbor::BIN) {
-    bytes += memory->usage(stencil,maxstencil);
-    bytes += memory->usage(stencilxyz,maxstencil,3);
-  } else if (neighstyle == Neighbor::MULTI_OLD) {
-    bytes += (double)atom->ntypes*maxstencil_multi_old * sizeof(int);
-    bytes += (double)atom->ntypes*maxstencil_multi_old * sizeof(double);
+    bytes += memory->usage(stencil, maxstencil);
+    bytes += memory->usage(stencilxyz, maxstencil, 3);
   } else if (neighstyle == Neighbor::MULTI) {
     int n = ncollections;
-    for (int i = 0; i < n; i++) {
-      for (int j = 0; j < n; j++) {
-        bytes += (double)maxstencil_multi[i][j] * sizeof(int);
+
+    // May not yet be initialized for occasional lists
+    if (maxstencil_multi) {
+      for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+          bytes += (double)maxstencil_multi[i][j] * sizeof(int);
+        }
       }
     }
   }

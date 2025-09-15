@@ -8,36 +8,39 @@ Optional build settings
 LAMMPS can be built with several optional settings.  Each subsection
 explains how to do this for building both with CMake and make.
 
-* `C++11 standard compliance`_ when building all of LAMMPS
+* `C++17 standard compliance`_ when building all of LAMMPS
 * `FFT library`_ for use with the :doc:`kspace_style pppm <kspace_style>` command
 * `Size of LAMMPS integer types and size limits`_
 * `Read or write compressed files`_
 * `Output of JPEG, PNG, and movie files`_ via the :doc:`dump image <dump_image>` or :doc:`dump movie <dump_image>` commands
-* `Support for downloading files`_
+* `Support for downloading files from the input`_
+* `Prevent download of large potential files`_
 * `Memory allocation alignment`_
 * `Workaround for long long integers`_
 * `Exception handling when using LAMMPS as a library`_ to capture errors
-* `Trigger selected floating-point exceptions`_
 
 ----------
 
-.. _cxx11:
+.. _cxx17:
 
-C++11 standard compliance
+C++17 standard compliance
 -------------------------
 
-A C++11 standard compatible compiler is a requirement for compiling LAMMPS.
-LAMMPS version 3 March 2020 is the last version compatible with the previous
-C++98 standard for the core code and most packages. Most currently used
-C++ compilers are compatible with C++11, but some older ones may need extra
-flags to enable C++11 compliance.  Example for GNU c++ 4.8.x:
+.. versionchanged:: 10Sep2025
+
+A C++17 standard compatible compiler is currently the minimum
+requirement for compiling LAMMPS.  LAMMPS version 22 July 2025 is the
+last version compatible with the C++11 standard for the core code and
+most packages. Most currently used C++ compilers are compatible with
+C++17, but some older ones may need extra flags to enable C++17
+compliance.
 
 .. code-block:: make
 
-   CCFLAGS = -g -O3 -std=c++11
+   CCFLAGS = -g -O3 -std=c++17
 
 Individual packages may require compliance with a later C++ standard
-like C++14 or C++17.  These requirements will be documented with the
+like C++20.  These requirements will be documented with the
 :doc:`individual packages <Packages_details>`.
 
 ----------
@@ -67,10 +70,10 @@ libraries and better pipelining for packing and communication.
 
       .. code-block:: bash
 
-         -D FFT=value              # FFTW3 or MKL or KISS, default is FFTW3 if found,
-                                   # else KISS
-         -D FFT_KOKKOS=value       # FFTW3 or MKL or KISS or CUFFT or HIPFFT,
-                                   # default is KISS
+         -D FFT=value              # FFTW3 or MKL or NVPL or KISS,
+                                   # default is FFTW3 if found, else KISS
+         -D FFT_KOKKOS=value       # FFTW3 or MKL or NVPL or KISS or CUFFT
+                                   # or HIPFFT or MKL_GPU, default is KISS
          -D FFT_SINGLE=value       # yes or no (default), no = double precision
          -D FFT_PACK=value         # array (default) or pointer or memcpy
          -D FFT_USE_HEFFTE=value   # yes or no (default), yes links to heFFTe
@@ -103,6 +106,8 @@ libraries and better pipelining for packing and communication.
          -D FFT_HEFFTE_BACKEND=value # FFTW or MKL or empty/undefined for the stock
                                      # heFFTe back end
          -D Heffte_ROOT=path         # path to an existing heFFTe installation
+         -D nvpl_fft_INCLUDE_DIR=path # path to NVPL FFT include files
+         -D nvpl_fft_LIBRARY_DIR=path # path to NVPL FFT libraries
 
       .. note::
 
@@ -121,9 +126,10 @@ libraries and better pipelining for packing and communication.
       .. code-block:: make
 
          FFT_INC = -DFFT_<NAME>        # where <NAME> is KISS (default), FFTW3,
-                                       # FFTW (same as FFTW3), or MKL
+                                       # FFTW (same as FFTW3), NVPL, or MKL
          FFT_INC = -DFFT_KOKKOS_<NAME> # where <NAME> is KISS (default), FFTW3,
-                                       # FFTW (same as FFTW3), MKL, CUFFT, or HIPFFT
+                                       # FFTW (same as FFTW3), NVPL, MKL, CUFFT,
+                                       # HIPFFT, or MKL_GPU
          FFT_INC = -DFFT_SINGLE       # do not specify for double precision
          FFT_INC = -DFFT_FFTW_THREADS # enable using threaded FFTW3 libraries
          FFT_INC = -DFFT_MKL_THREADS  # enable using threaded FFTs with MKL libraries
@@ -140,6 +146,9 @@ libraries and better pipelining for packing and communication.
 
          # cuFFT either precision
          FFT_LIB =  -lcufft
+
+         # MKL_GPU either precision
+         FFT_LIB = -lmkl_sycl_dft -lmkl_intel_ilp64 -lmkl_tbb_thread -lmkl_core -ltbb
 
          # FFTW3 double precision
          FFT_LIB =  -lfftw3
@@ -164,6 +173,10 @@ libraries and better pipelining for packing and communication.
 
          # MKL with automatic runtime selection of interface libs
          FFT_LIB =  -lmkl_rt
+
+         # threaded NVPL FFT
+         FFT_LIB =  -lnvpl_fftw
+
 
       As with CMake, you do not need to set paths in ``FFT_INC`` or
       ``FFT_PATH``, if the compiler can find the FFT header and library
@@ -218,10 +231,15 @@ The Intel MKL math library is part of the Intel compiler suite.  It
 can be used with the Intel or GNU compiler (see the ``FFT_LIB`` setting
 above).
 
+The NVIDIA Performance Libraries (NVPL) FFT library is optimized for NVIDIA
+Grace Armv9.0 architecture. You can download it from https://docs.nvidia.com/nvpl/
+
 The cuFFT and hipFFT FFT libraries are packaged with NVIDIA's CUDA and
 AMD's HIP installations, respectively. These FFT libraries require the
 Kokkos acceleration package to be enabled and the Kokkos back end to be
-GPU-resident (i.e., HIP or CUDA).
+GPU-resident (i.e., HIP or CUDA). Similarly, GPU offload of FFTs on
+Intel GPUs with oneMKL currently requires the Kokkos acceleration
+package to be enabled with the SYCL back end.
 
 Performing 3d FFTs in parallel can be time-consuming due to data access
 and required communication.  This cost can be reduced by performing
@@ -259,7 +277,7 @@ find a heFFTe installation with the correct back end (e.g., FFTW or
 MKL), it will attempt to download and build the library automatically.
 In this case, LAMMPS CMake will also accept all heFFTe specific
 variables listed in the `heFFTe documentation
-<https://mkstoyanov.bitbucket.io/heffte/md_doxygen_installation.html>`_
+<https://icl-utk-edu.github.io/heffte/md_doxygen_installation.html>`_
 and those variables will be passed into the heFFTe build.
 
 ----------
@@ -288,7 +306,7 @@ large counters can become before "rolling over".  The default setting of
 
       .. code-block:: bash
 
-         -D LAMMPS_SIZES=value   # smallbig (default) or bigbig or smallsmall
+         -D LAMMPS_SIZES=value   # smallbig (default) or bigbig
 
       If the variable is not set explicitly, "smallbig" is used.
 
@@ -299,7 +317,7 @@ large counters can become before "rolling over".  The default setting of
 
       .. code-block:: make
 
-         LMP_INC = -DLAMMPS_SMALLBIG    # or -DLAMMPS_BIGBIG or -DLAMMPS_SMALLSMALL
+         LMP_INC = -DLAMMPS_SMALLBIG    # or -DLAMMPS_BIGBIG
 
       The default setting is ``-DLAMMPS_SMALLBIG`` if nothing is specified
 
@@ -308,42 +326,33 @@ LAMMPS system size restrictions
 
 .. list-table::
    :header-rows: 1
-   :widths: 18 27 28 27
+   :widths: 27 36 37
    :align: center
 
    * -
      - smallbig
      - bigbig
-     - smallsmall
    * - Total atom count
      - :math:`2^{63}` atoms (= :math:`9.223 \cdot 10^{18}`)
      - :math:`2^{63}` atoms (= :math:`9.223 \cdot 10^{18}`)
-     - :math:`2^{31}` atoms (= :math:`2.147 \cdot 10^9`)
    * - Total timesteps
      - :math:`2^{63}` steps (= :math:`9.223 \cdot 10^{18}`)
      - :math:`2^{63}` steps (= :math:`9.223 \cdot 10^{18}`)
-     - :math:`2^{31}` steps (= :math:`2.147 \cdot 10^9`)
    * - Atom ID values
      - :math:`1 \le i \le 2^{31} (= 2.147 \cdot 10^9)`
      - :math:`1 \le i \le 2^{63} (= 9.223 \cdot 10^{18})`
-     - :math:`1 \le i \le 2^{31} (= 2.147 \cdot 10^9)`
    * - Image flag values
      - :math:`-512 \le i \le 511`
      - :math:`- 1\,048\,576 \le i \le 1\,048\,575`
-     - :math:`-512 \le i \le 511`
 
 The "bigbig" setting increases the size of image flags and atom IDs over
-"smallbig" and the "smallsmall" setting is only needed if your machine
-does not support 64-bit integers or incurs performance penalties when
-using them.
+the default "smallbig" setting.
 
 These are limits for the core of the LAMMPS code, specific features or
-some styles may impose additional limits.  The :ref:`ATC
-<PKG-ATC>` package cannot be compiled with the "bigbig" setting.
-Also, there are limitations when using the library interface where some
-functions with known issues have been replaced by dummy calls printing a
-corresponding error message rather than crashing randomly or corrupting
-data.
+some styles may impose additional limits.  Also, there are limitations
+when using the library interface where some functions with known issues
+have been replaced by dummy calls printing a corresponding error message
+rather than crashing randomly or corrupting data.
 
 Atom IDs are not required for atomic systems which do not store bond
 topology information, though IDs are enabled by default.  The
@@ -483,14 +492,14 @@ during a run.
    library and lead to simulations using compressed output or input to
    hang or crash. For selected operations, compressed file I/O is also
    available using a compression library instead, which is what the
-   :ref:`COMPRESS package <PKG-COMPRESS>` enables.
+   :ref:`COMPRESS package <PKG-COMPRESS>` provides.
 
 --------------------------------------------------
 
 .. _libcurl:
 
-Support for downloading files
------------------------------
+Support for downloading files from the input
+--------------------------------------------
 
 .. versionadded:: 29Aug2024
 
@@ -530,6 +539,25 @@ LAMMPS is compiled accordingly which needs the following settings:
       if make can find the libcurl header and library files in their
       default system locations.  You must specify ``CURL_LIB`` with a
       paths or linker flags to link to libcurl.
+
+----------
+
+.. _download_pot:
+
+Prevent download of large potential files
+-----------------------------------------
+
+.. versionadded:: 8Feb2023
+
+LAMMPS bundles a selection of potential files in the ``potentials``
+folder as examples of how those kinds of potential files look like and
+for use with the provided input examples in the ``examples`` tree.  To
+keep the size of the distributed LAMMPS source package small, very large
+potential files (> 5 MBytes) are not bundled, but only downloaded on
+demand when the :doc:`corresponding package <Packages>` is
+installed.  This automatic download can be prevented when :doc:`building
+LAMMPS with CMake <Build_cmake>` by adding the setting `-D
+DOWNLOAD_POTENTIALS=off` when configuring.
 
 ----------
 
@@ -619,40 +647,3 @@ code has to be set up to *catch* exceptions thrown from within LAMMPS.
    throw an exception and thus other MPI ranks may get stuck waiting for
    messages from the ones with errors.
 
-----------
-
-.. _trap_fpe:
-
-Trigger selected floating-point exceptions
-------------------------------------------
-
-Many kinds of CPUs have the capability to detect when a calculation
-results in an invalid math operation, like a division by zero or calling
-the square root with a negative argument.  The default behavior on
-most operating systems is to continue and have values for ``NaN`` (= not
-a number) or ``Inf`` (= infinity).  This allows software to detect and
-recover from such conditions.  This behavior can be changed, however,
-often through use of compiler flags.  On Linux systems (or more general
-on systems using the GNU C library), these so-called floating-point traps
-can also be selectively enabled through library calls.  LAMMPS supports
-that by setting the ``-DLAMMPS_TRAP_FPE`` pre-processor define.  As it is
-done in the ``main()`` function, this applies only to the standalone
-executable, not the library.
-
-.. tabs::
-
-   .. tab:: CMake build
-
-      .. code-block:: bash
-
-         -D CMAKE_TUNE_FLAGS=-DLAMMPS_TRAP_FPE
-
-   .. tab:: Traditional make
-
-      .. code-block:: make
-
-         LMP_INC = -DLAMMPS_TRAP_FPE  <other LMP_INC settings>
-
-After compilation with this flag set, the LAMMPS executable will stop
-and produce a core dump when a division by zero, overflow, illegal math
-function argument or other invalid floating point operation is encountered.

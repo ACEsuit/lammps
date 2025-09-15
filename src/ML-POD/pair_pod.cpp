@@ -18,19 +18,17 @@
 #include "pair_pod.h"
 
 #include "atom.h"
-#include "comm.h"
 #include "error.h"
 #include "force.h"
+#include "info.h"
 #include "math_const.h"
 #include "math_special.h"
 #include "memory.h"
 #include "neigh_list.h"
 #include "neighbor.h"
-#include "tokenizer.h"
 
+#include <algorithm>
 #include <cmath>
-#include <cstring>
-#include <chrono>
 
 #include "eapod.h"
 
@@ -335,7 +333,9 @@ void PairPOD::init_style()
 
 double PairPOD::init_one(int i, int j)
 {
-  if (setflag[i][j] == 0) error->all(FLERR, "All pair coeffs are not set");
+  if (setflag[i][j] == 0)
+    error->all(FLERR, Error::NOLASTLINE,
+               "All pair coeffs are not set. Status:\n" + Info::get_pair_coeff_status(lmp));
 
   double rcut = 0.0;
   rcut = fastpodptr->rcut;
@@ -822,7 +822,7 @@ void PairPOD::radialbasis(double *rbft, double *rbftx, double *rbfty, double *rb
   }
 }
 
-void matrixMultiply(double *Phi, double *rbft, double *rbf, int nrbfmax, int ns, int Nij)
+static void matrixMultiply(double *Phi, double *rbft, double *rbf, int nrbfmax, int ns, int Nij)
 {
   for (int idx=0; idx<nrbfmax*Nij; idx++)  {
     int j = idx / nrbfmax;  // pair index index
@@ -2110,7 +2110,7 @@ void PairPOD::blockatomenergyforce(double *ei, double *fij, int Ni, int Nij)
   blockatom_energyforce(ei, fij, Ni, Nij);
 }
 
-void PairPOD::savematrix2binfile(std::string filename, double *A, int nrows, int ncols)
+void PairPOD::savematrix2binfile(const std::string &filename, double *A, int nrows, int ncols)
 {
   FILE *fp = fopen(filename.c_str(), "wb");
   double sz[2];
@@ -2121,7 +2121,7 @@ void PairPOD::savematrix2binfile(std::string filename, double *A, int nrows, int
   fclose(fp);
 }
 
-void PairPOD::saveintmatrix2binfile(std::string filename, int *A, int nrows, int ncols)
+void PairPOD::saveintmatrix2binfile(const std::string &filename, int *A, int nrows, int ncols)
 {
   FILE *fp = fopen(filename.c_str(), "wb");
   int sz[2];

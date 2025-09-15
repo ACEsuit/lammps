@@ -74,7 +74,7 @@ void NPairCopyKokkos<DeviceType>::copy_to_cpu(NeighList *list)
   NeighList *listcopy = list->listcopy;
   NeighListKokkos<DeviceType>* listcopy_kk = (NeighListKokkos<DeviceType>*) listcopy;
 
-  listcopy_kk->k_ilist.template sync<LMPHostType>();
+  listcopy_kk->k_ilist.sync_host();
 
   int inum = listcopy->inum;
   int gnum = listcopy->gnum;
@@ -116,7 +116,7 @@ void NPairCopyKokkos<DeviceType>::copy_to_cpu(NeighList *list)
     firstneigh[i] = neighptr;
     ipage->vgot(jnum);
     if (ipage->status())
-      error->one(FLERR,"Neighbor list overflow, boost neigh_modify one");
+      error->one(FLERR, Error::NOLASTLINE, "Neighbor list overflow, boost neigh_modify one" + utils::errorurl(36));
   }
 }
 
